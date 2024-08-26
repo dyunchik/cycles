@@ -20,6 +20,7 @@
 
 CCL_NAMESPACE_BEGIN
 
+#define OIDN_MAX_MEM    256
 thread_mutex OIDNDenoiser::mutex_;
 
 OIDNDenoiser::OIDNDenoiser(Device *denoiser_device, const DenoiseParams &params)
@@ -180,6 +181,9 @@ class OIDNDenoiseContext {
     oidn_filter.setProgressMonitorFunction(oidn_progress_monitor_function, denoiser_);
     oidn_filter.set("hdr", true);
     oidn_filter.set("srgb", false);
+#ifdef OIDN_MAX_MEM
+    oidn_filter.set("maxMemoryMB", OIDN_MAX_MEM);
+#endif
     if (custom_weights.size()) {
       oidn_filter.setData("weights", custom_weights.data(), custom_weights.size());
     }
@@ -221,6 +225,9 @@ class OIDNDenoiseContext {
     set_pass(oidn_filter, oidn_pass);
     set_output_pass(oidn_filter, oidn_pass);
     set_quality(oidn_filter);
+#ifdef OIDN_MAX_MEM
+    oidn_filter.set("maxMemoryMB", OIDN_MAX_MEM);
+#endif
     oidn_filter.commit();
     oidn_filter.execute();
 
