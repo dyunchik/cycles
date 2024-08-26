@@ -9,6 +9,10 @@
 #include "util/string.h"
 #include "util/unique_ptr.h"
 
+#define BELIGHT_FIX_USE_TILES
+#define BELIGHT_DENOISE_ON_CANCEL
+#define BELIGHT_FORCE_PAUSE
+
 CCL_NAMESPACE_BEGIN
 
 class DenoiseParams;

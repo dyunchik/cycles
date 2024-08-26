@@ -642,17 +642,71 @@ bool TileManager::read_full_buffer_from_disk(const string_view filename,
   if (!buffer_params_from_image_spec_atttributes(&buffer_params, image_spec)) {
     return false;
   }
+    
+#ifdef BELIGHT_FIX_USE_TILES
+  buffer_params.window_width = buffer_params.full_width;
+  buffer_params.window_height = buffer_params.full_height;
+  BufferParams image_buffer_params = buffer_params;
+  int bp_offset = 0;
+  for(vector<BufferPass>::iterator itp = buffer_params.passes.begin(); itp!=buffer_params.passes.end();)
+  {
+    BufferPass& bp = *itp;
+    if(bp.type==PASS_COMBINED)
+    {
+        if(bp.get_info().num_components>3)
+        {//set lightgroup to make bp.get_info().num_components==3, we don't need alpha in the final denoise - save memory
+            bp.lightgroup = ustring("LG");
+            assert(bp.get_info().num_components==3);
+        }
+    }
+    else if(bp.type==PASS_ADAPTIVE_AUX_BUFFER)
+    {//we don't need this pass data in the final denoise - remove it to save memory
+        itp = buffer_params.passes.erase(itp);
+        continue;
+    }
+    bp.offset = bp_offset;
+    bp_offset += bp.get_info().num_components;
+    ++itp;
+  }
+  buffer_params.update_passes();
+#endif
+    
   buffers->reset(buffer_params);
 
   if (!node_from_image_spec_atttributes(denoise_params, image_spec, ATTR_DENOISE_SOCKET_PREFIX)) {
     return false;
   }
 
+#ifdef BELIGHT_FIX_USE_TILES
+  stride_t dst_xstride = buffer_params.pass_stride * sizeof(float);
+  for(vector<BufferPass>::const_iterator itp = image_buffer_params.passes.begin(); itp!=image_buffer_params.passes.end(); ++itp)
+  {
+    const BufferPass& ibp = *itp;
+    const BufferPass* pbp = buffer_params.find_pass(ibp.type, ibp.mode);
+    if(pbp)
+    {
+        int dst_pass_offset = buffer_params.get_pass_offset(pbp->type, pbp->mode);
+        if(dst_pass_offset!=PASS_UNUSED)
+        {
+            int src_pass_offset = image_buffer_params.get_pass_offset(ibp.type, ibp.mode);
+            int dst_pass_components = pbp->get_info().num_components;
+            int src_pass_end = src_pass_offset+dst_pass_components;
+            assert(src_pass_end <= in->spec().nchannels);
+            if (!in->read_image(0, 0, src_pass_offset, src_pass_end, TypeDesc::FLOAT, buffers->buffer.data()+dst_pass_offset, dst_xstride))
+            {
+                LOG(ERROR) << "Error reading pixels from the tile file " << in->geterror();
+                return false;
+            }
+        }
+    }
+  }
+#else
   const int num_channels = in->spec().nchannels;
   if (!in->read_image(0, 0, 0, num_channels, TypeDesc::FLOAT, buffers->buffer.data())) {
     LOG(ERROR) << "Error reading pixels from the tile file " << in->geterror();
     return false;
   }
+#endif
 
   if (!in->close()) {
     LOG(ERROR) << "Error closing tile file " << in->geterror();
