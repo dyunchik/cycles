@@ -189,9 +189,9 @@ endif()
 
 if(MSVC AND EXISTS ${_cycles_lib_dir})
   set(ZLIB_INCLUDE_DIRS ${_cycles_lib_dir}/zlib/include)
-  set(ZLIB_LIBRARIES ${_cycles_lib_dir}/zlib/lib/libz_st.lib)
+  set(ZLIB_LIBRARIES ${_cycles_lib_dir}/zlib/lib/x64/zlibstatic.lib)
   set(ZLIB_INCLUDE_DIR ${_cycles_lib_dir}/zlib/include)
-  set(ZLIB_LIBRARY ${_cycles_lib_dir}/zlib/lib/libz_st.lib)
+  set(ZLIB_LIBRARY ${_cycles_lib_dir}/zlib/lib/x64/zlibstatic.lib)
   set(ZLIB_DIR ${_cycles_lib_dir}/zlib)
   set(ZLIB_FOUND ON)
 elseif(NOT APPLE)
@@ -203,8 +203,8 @@ endif()
 ###########################################################################
 
 if(MSVC AND EXISTS ${_cycles_lib_dir})
-  set(PTHREADS_LIBRARIES "${_cycles_lib_dir}/pthreads/lib/pthreadVC3.lib")
-  include_directories("${_cycles_lib_dir}/pthreads/include")
+  # set(PTHREADS_LIBRARIES "${_cycles_lib_dir}/pthreads/lib/pthreadVC3.lib")
+  # include_directories("${_cycles_lib_dir}/pthreads/include")
 else()
   set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
   find_package(Threads REQUIRED)
@@ -220,16 +220,16 @@ if(MSVC AND EXISTS ${_cycles_lib_dir})
   set(OPENIMAGEIO_INCLUDE_DIRS ${OPENIMAGEIO_INCLUDE_DIR} ${OPENIMAGEIO_INCLUDE_DIR}/OpenImageIO)
   # Special exceptions for libraries which needs explicit debug version
   set(OPENIMAGEIO_LIBRARIES
-    optimized ${OPENIMAGEIO_ROOT_DIR}/lib/OpenImageIO.lib
-    optimized ${OPENIMAGEIO_ROOT_DIR}/lib/OpenImageIO_Util.lib
-    debug ${OPENIMAGEIO_ROOT_DIR}/lib/OpenImageIO_d.lib
-    debug ${OPENIMAGEIO_ROOT_DIR}/lib/OpenImageIO_Util_d.lib
+    optimized ${OPENIMAGEIO_ROOT_DIR}/lib/x64/OpenImageIO.lib
+    optimized ${OPENIMAGEIO_ROOT_DIR}/lib/x64/OpenImageIO_Util.lib
+    debug ${OPENIMAGEIO_ROOT_DIR}/lib/x64/OpenImageIO.lib
+    debug ${OPENIMAGEIO_ROOT_DIR}/lib/x64/OpenImageIO_Util.lib
   )
 
   set(PUGIXML_INCLUDE_DIR ${PUGIXML_ROOT_DIR}/include)
   set(PUGIXML_LIBRARIES
-    optimized ${PUGIXML_ROOT_DIR}/lib/pugixml.lib
-    debug ${PUGIXML_ROOT_DIR}/lib/pugixml_d.lib
+    optimized ${PUGIXML_ROOT_DIR}/lib/x64/pugixml.lib
+    debug ${PUGIXML_ROOT_DIR}/lib/x64/pugixml.lib
   )
 else()
   find_package(OpenImageIO REQUIRED)
@@ -244,7 +244,7 @@ endif()
 # Dependencies
 if(MSVC AND EXISTS ${_cycles_lib_dir})
   set(OPENJPEG_INCLUDE_DIR ${OPENJPEG}/include/openjpeg-2.3)
-  set(OPENJPEG_LIBRARIES ${_cycles_lib_dir}/openjpeg/lib/openjp2${CMAKE_STATIC_LIBRARY_SUFFIX})
+  set(OPENJPEG_LIBRARIES ${_cycles_lib_dir}/openjpeg/lib/x64/openjp2${CMAKE_STATIC_LIBRARY_SUFFIX})
 else()
   find_package(OpenJPEG REQUIRED)
 endif()
@@ -272,16 +272,16 @@ if(MSVC AND EXISTS ${_cycles_lib_dir})
   set(OPENEXR_INCLUDE_DIR ${OPENEXR_ROOT_DIR}/include)
   set(OPENEXR_INCLUDE_DIRS ${OPENEXR_INCLUDE_DIR} ${OPENEXR_ROOT_DIR}/include/OpenEXR ${IMATH_ROOT_DIR}/include ${IMATH_ROOT_DIR}/include/Imath)
   set(OPENEXR_LIBRARIES
-    optimized ${OPENEXR_ROOT_DIR}/lib/OpenEXR.lib
-    optimized ${OPENEXR_ROOT_DIR}/lib/OpenEXRCore.lib
-    optimized ${OPENEXR_ROOT_DIR}/lib/Iex.lib
-    optimized ${IMATH_ROOT_DIR}/lib/Imath.lib
-    optimized ${OPENEXR_ROOT_DIR}/lib/IlmThread.lib
-    debug ${OPENEXR_ROOT_DIR}/lib/OpenEXR_d.lib
-    debug ${OPENEXR_ROOT_DIR}/lib/OpenEXRCore_d.lib
-    debug ${OPENEXR_ROOT_DIR}/lib/Iex_d.lib
-    debug ${IMATH_ROOT_DIR}/lib/Imath_d.lib
-    debug ${OPENEXR_ROOT_DIR}/lib/IlmThread_d.lib
+    optimized ${OPENEXR_ROOT_DIR}/lib/x64/OpenEXR-3_1.lib
+    optimized ${OPENEXR_ROOT_DIR}/lib/x64/OpenEXRCore-3_1.lib
+    optimized ${OPENEXR_ROOT_DIR}/lib/x64/Iex-3_1.lib
+    optimized ${IMATH_ROOT_DIR}/lib/x64/Imath-3_1.lib
+    optimized ${OPENEXR_ROOT_DIR}/lib/x64/IlmThread-3_1.lib
+    debug ${OPENEXR_ROOT_DIR}/lib/x64/OpenEXR-3_1.lib
+    debug ${OPENEXR_ROOT_DIR}/lib/x64/OpenEXRCore-3_1.lib
+    debug ${OPENEXR_ROOT_DIR}/lib/x64/Iex-3_1.lib
+    debug ${IMATH_ROOT_DIR}/lib/x64/Imath-3_1.lib
+    debug ${OPENEXR_ROOT_DIR}/lib/x64/IlmThread-3_1.lib
     )
 else()
   find_package(OpenEXR REQUIRED)
@@ -296,7 +296,7 @@ else()
 endif()
 
 ###########################################################################
-# OpenShadingLanguage
+# OpenShadingLanguage & LLVM
 ###########################################################################
 
 if(WITH_CYCLES_OSL)
@@ -419,40 +419,35 @@ if(EXISTS ${_cycles_lib_dir})
 endif()
 
 if(MSVC AND EXISTS ${_cycles_lib_dir})
-  set(BOOST_INCLUDE_DIR ${Boost_ROOT}/include)
-  set(BOOST_VERSION_HEADER ${BOOST_INCLUDE_DIR}/boost/version.hpp)
-  if(EXISTS ${BOOST_VERSION_HEADER})
-    file(STRINGS "${BOOST_VERSION_HEADER}" BOOST_LIB_VERSION REGEX "#define BOOST_LIB_VERSION ")
-    if(BOOST_LIB_VERSION MATCHES "#define BOOST_LIB_VERSION \"([0-9_]+)\"")
-      set(BOOST_VERSION "${CMAKE_MATCH_1}")
-    endif()
-  endif()
-  if(NOT BOOST_VERSION)
-    message(FATAL_ERROR "Unable to determine Boost version")
-  endif()
-  if(CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64")
-    set(BOOST_POSTFIX "vc143-mt-a64-${BOOST_VERSION}")
-    set(BOOST_DEBUG_POSTFIX "vc143-mt-gyd-a64-${BOOST_VERSION}")
-  else()
-    set(BOOST_POSTFIX "vc142-mt-x64-${BOOST_VERSION}.lib")
-    set(BOOST_DEBUG_POSTFIX "vc142-mt-gyd-x64-${BOOST_VERSION}.lib")
-  endif()
-  set(BOOST_LIBRARIES
-    optimized ${Boost_ROOT}/lib/boost_date_time-${BOOST_POSTFIX}
-    optimized ${Boost_ROOT}/lib/boost_iostreams-${BOOST_POSTFIX}
-    optimized ${Boost_ROOT}/lib/boost_filesystem-${BOOST_POSTFIX}
-    optimized ${Boost_ROOT}/lib/boost_regex-${BOOST_POSTFIX}
-    optimized ${Boost_ROOT}/lib/boost_system-${BOOST_POSTFIX}
-    optimized ${Boost_ROOT}/lib/boost_thread-${BOOST_POSTFIX}
-    optimized ${Boost_ROOT}/lib/boost_chrono-${BOOST_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_date_time-${BOOST_DEBUG_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_iostreams-${BOOST_DEBUG_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_filesystem-${BOOST_DEBUG_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_regex-${BOOST_DEBUG_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_system-${BOOST_DEBUG_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_thread-${BOOST_DEBUG_POSTFIX}
-    debug ${Boost_ROOT}/lib/boost_chrono-${BOOST_DEBUG_POSTFIX}
-  )
+#  set(BOOST_INCLUDE_DIR ${Boost_ROOT}/include)
+#  set(BOOST_VERSION_HEADER ${BOOST_INCLUDE_DIR}/boost/version.hpp)
+#  if(EXISTS ${BOOST_VERSION_HEADER})
+#    file(STRINGS "${BOOST_VERSION_HEADER}" BOOST_LIB_VERSION REGEX "#define BOOST_LIB_VERSION ")
+#    if(BOOST_LIB_VERSION MATCHES "#define BOOST_LIB_VERSION \"([0-9_]+)\"")
+#      set(BOOST_VERSION "${CMAKE_MATCH_1}")
+#    endif()
+#  endif()
+#  if(NOT BOOST_VERSION)
+#    message(FATAL_ERROR "Unable to determine Boost version")
+#  endif()
+#  set(BOOST_POSTFIX "vc143-mt-x64-${BOOST_VERSION}.lib")
+#  set(BOOST_DEBUG_POSTFIX "vc143-mt-gyd-x64-${BOOST_VERSION}.lib")
+#  set(BOOST_LIBRARIES
+#    optimized ${Boost_ROOT}/lib/libboost_date_time-${BOOST_POSTFIX}
+#    # optimized ${Boost_ROOT}/lib/libboost_iostreams-${BOOST_POSTFIX}
+#    # optimized ${Boost_ROOT}/lib/libboost_filesystem-${BOOST_POSTFIX}
+#    optimized ${Boost_ROOT}/lib/libboost_regex-${BOOST_POSTFIX}
+#    optimized ${Boost_ROOT}/lib/libboost_system-${BOOST_POSTFIX}
+#    optimized ${Boost_ROOT}/lib/libboost_thread-${BOOST_POSTFIX}
+#    optimized ${Boost_ROOT}/lib/libboost_chrono-${BOOST_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_date_time-${BOOST_DEBUG_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_iostreams-${BOOST_DEBUG_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_filesystem-${BOOST_DEBUG_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_regex-${BOOST_DEBUG_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_system-${BOOST_DEBUG_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_thread-${BOOST_DEBUG_POSTFIX}
+#    debug ${Boost_ROOT}/lib/libboost_chrono-${BOOST_DEBUG_POSTFIX}
+#  )
   if(WITH_CYCLES_OSL)
     set(BOOST_LIBRARIES ${BOOST_LIBRARIES}
       optimized ${Boost_ROOT}/lib/boost_wave-${BOOST_POSTFIX}
@@ -488,7 +483,7 @@ endif()
 
 set(BOOST_DEFINITIONS "-DBOOST_ALL_NO_LIB ${BOOST_DEFINITIONS}")
 
-add_bundled_libraries(boost/lib)
+# add_bundled_libraries(boost/lib)
 
 ###########################################################################
 # Embree
@@ -643,13 +638,22 @@ endif()
 
 if(WITH_CYCLES_OPENIMAGEDENOISE)
   set(WITH_OPENIMAGEDENOISE ON)
+
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    set(OPENIMAGEDENOISE_INCLUDE_DIRS ${OPENIMAGEDENOISE_ROOT_DIR}/include)
+    set(OPENIMAGEDENOISE_LIBRARIES
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/OpenImageDenoise.lib
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/OpenImageDenoise_core.lib
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/OpenImageDenoise_device_cpu.lib
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/dnnl.lib
+      debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/OpenImageDenoise.lib
+      debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/OpenImageDenoise_core.lib
+      debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/OpenImageDenoise_device_cpu.lib
+      debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/x64/dnnl.lib
+    )
+  else()
   find_package(OpenImageDenoise REQUIRED)
 endif()
-
-if(WIN32)
-  add_bundled_libraries(openimagedenoise/bin)
-else()
-  add_bundled_libraries(openimagedenoise/lib)
 endif()
 
 ###########################################################################
@@ -660,8 +664,8 @@ if(NOT USD_OVERRIDE_TBB)
   if(MSVC AND EXISTS ${_cycles_lib_dir})
     set(TBB_INCLUDE_DIRS ${TBB_ROOT_DIR}/include)
     set(TBB_LIBRARIES
-      optimized ${TBB_ROOT_DIR}/lib/tbb.lib
-      debug ${TBB_ROOT_DIR}/lib/tbb_debug.lib
+      optimized ${TBB_ROOT_DIR}/lib/x64/tbb.lib
+      debug ${TBB_ROOT_DIR}/lib/x64/tbb.lib
     )
   else()
     find_package(TBB REQUIRED)
