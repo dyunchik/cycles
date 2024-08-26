@@ -147,6 +147,9 @@ void PathTrace::device_free()
     path_trace_work->get_render_buffers()->reset(empty_params);
   }
   render_state_.need_reset_params = true;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+  destroy_gpu_resources();
+#endif
 }
 
 void PathTrace::set_progress(Progress *progress)
@@ -818,7 +821,11 @@ void PathTrace::finalize_full_buffer_on_disk(const RenderWork &render_work)
    * so that we never hold scene and full-frame buffer in memory at the same time). */
 }
 
+#ifdef BELIGHT_QUICK_EXIT_ON_CANCEL
+void PathTrace::cancel(bool quick /* = false */)
+#else
 void PathTrace::cancel()
+#endif
 {
   thread_scoped_lock lock(render_cancel_.mutex);
 
@@ -828,6 +835,9 @@ void PathTrace::cancel()
     render_cancel_.condition.wait(lock);
   }
 
+#ifdef BELIGHT_QUICK_EXIT_ON_CANCEL
+  if (!quick)
+#endif
   render_cancel_.is_requested = false;
 }
 
@@ -1042,8 +1052,12 @@ void PathTrace::process_full_buffer_from_disk(string_view filename)
      *    ensure proper denoiser is used. */
     set_denoiser_params(denoise_params);
 
+#ifdef BELIGHT_FIX_USE_TILES
+    denoiser_->denoise_buffer(full_frame_buffers.params, &full_frame_buffers, 1, true);
+#else
     /* Number of samples doesn't matter too much, since the samples count pass will be used. */
     denoiser_->denoise_buffer(full_frame_buffers.params, &full_frame_buffers, 0, false);
+#endif
 
     render_state_.has_denoised_result = true;
   }

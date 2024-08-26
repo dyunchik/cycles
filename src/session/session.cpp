@@ -137,7 +137,11 @@ void Session::cancel(bool quick)
   if (rendering) {
     /* Cancel path trace operations. */
     if (quick && path_trace_) {
+#ifdef BELIGHT_QUICK_EXIT_ON_CANCEL
+      path_trace_->cancel(true);
+#else
       path_trace_->cancel();
+#endif
     }
 
     /* Cancel other operations. */
@@ -153,6 +157,11 @@ void Session::cancel(bool quick)
     /* Wait for render thread to be cancelled or finished. */
     wait();
   }
+#ifdef BELIGHT_QUICK_EXIT_ON_CANCEL
+  else {
+    path_trace_->cancel(true);
+  }
+#endif
 }
 
 bool Session::ready_to_reset()
@@ -445,9 +454,11 @@ RenderWork Session::run_update_for_next_iteration()
 bool Session::run_wait_for_work(const RenderWork &render_work)
 {
   /* In an offline rendering there is no pause, and no tiles will mean the job is fully done. */
+#ifndef BELIGHT_FORCE_PAUSE
   if (params.background) {
     return false;
   }
+#endif
 
   thread_scoped_lock pause_lock(pause_mutex_);
 
@@ -472,7 +483,11 @@ bool Session::run_wait_for_work(const RenderWork &render_work)
     pause_cond_.wait(pause_lock);
 
     if (pause_) {
+#ifdef BELIGHT_FORCE_PAUSE
+      progress.add_skip_time(pause_timer, false);
+#else
       progress.add_skip_time(pause_timer, params.background);
+#endif
     }
 
     update_status_time(pause_, no_work);
@@ -566,7 +581,7 @@ void Session::do_delayed_reset()
   progress.set_time_limit(time_limit);
 }
 
-void Session::reset(const SessionParams &session_params, const BufferParams &buffer_params)
+void Session::reset(const SessionParams &session_params, const BufferParams &buffer_params, bool reset_now)
 {
   {
     thread_scoped_lock reset_lock(delayed_reset_.mutex);
@@ -580,6 +595,13 @@ void Session::reset(const SessionParams &session_params, const BufferParams &buf
   }
 
   pause_cond_.notify_all();
+  
+  if(reset_now)
+  {
+    thread_scoped_lock reset_lock(delayed_reset_.mutex);
+    thread_scoped_lock buffers_lock(buffers_mutex_);
+    do_delayed_reset();
+  }
 }
 
 void Session::set_samples(int samples)

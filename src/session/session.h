@@ -134,7 +134,7 @@ class Session {
   void wait();
 
   bool ready_to_reset();
-  void reset(const SessionParams &session_params, const BufferParams &buffer_params);
+  void reset(const SessionParams &session_params, const BufferParams &buffer_params, bool reset_now=false);
 
   void set_pause(bool pause);
 

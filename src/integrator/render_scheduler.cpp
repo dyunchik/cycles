@@ -276,6 +276,10 @@ void RenderScheduler::render_work_reschedule_on_cancel(RenderWork &render_work)
   if (has_rendered_samples && !state_.full_frame_was_written) {
     render_work.display.update = true;
   }
+    
+#ifdef BELIGHT_DENOISE_ON_CANCEL
+  render_work.tile.denoise = has_rendered_samples && !tile_manager_.has_multiple_tiles();
+#endif
 }
 
 bool RenderScheduler::done() const

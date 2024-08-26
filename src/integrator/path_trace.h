@@ -18,6 +18,8 @@
 #include "util/unique_ptr.h"
 #include "util/vector.h"
 
+#define BELIGHT_QUICK_EXIT_ON_CANCEL
+
 CCL_NAMESPACE_BEGIN
 
 class AdaptiveSampling;
@@ -119,7 +121,11 @@ class PathTrace {
    *
    * This is a blocking call, which returns as soon as there is no running `render_samples()` call.
    */
+#ifdef BELIGHT_QUICK_EXIT_ON_CANCEL
+  void cancel(bool quick = false);
+#else
   void cancel();
+#endif
 
   /* Copy an entire render buffer to/from the path trace. */
 
