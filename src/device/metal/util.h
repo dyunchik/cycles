@@ -15,7 +15,20 @@
 
 #  include "util/thread.h"
 
+#if defined(WITH_CYCLES_LOGGING) || !defined(DEBUG)
 #  define metal_printf VLOG(4) << string_printf
+#else
+#include "util/string.h"
+class NSLogStream {
+ public:
+  NSLogStream &operator<<(const ccl::string& ss)
+  {
+    NSLog(@"%s", ss.c_str());
+    return *this;
+  }
+};
+#  define metal_printf NSLogStream() << string_printf
+#endif
 
 CCL_NAMESPACE_BEGIN
 
@@ -31,10 +44,17 @@ enum AppleGPUArchitecture {
    * ensure that AMD/Intel GPUs don't accidentally get Apple Silicon only features enabled when
    * using comparison operators. */
   NOT_APPLE_GPU,
+  APPLE_A1X,
+  APPLE_A14,
+  APPLE_A15,
+  APPLE_A16,
   APPLE_M1,
   APPLE_M2,
   APPLE_M2_BIG,
   APPLE_M3,
+  APPLE_A17,
+  APPLE_A18,
+  APPLE_A19,
   /* Keep APPLE_UNKNOWN at the end of this enum to ensure that unknown future architectures get
    * the most recent defaults when using comparison operators. */
   APPLE_UNKNOWN,

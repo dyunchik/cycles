@@ -41,6 +41,9 @@ struct ShaderCache {
     if (MetalInfo::get_device_vendor(mtlDevice) == METAL_GPU_APPLE) {
       switch (MetalInfo::get_apple_gpu_architecture(mtlDevice)) {
         default:
+        case APPLE_A17: //no break
+        case APPLE_A18: //no break
+        case APPLE_A19: //no break
         case APPLE_M3:
           /* Peak occupancy is achieved through Dynamic Caching on M3 GPUs. */
           for (size_t i = 0; i < DEVICE_KERNEL_NUM; i++) {
@@ -59,6 +62,8 @@ struct ShaderCache {
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {768, 576};
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {896, 768};
           break;
+        case APPLE_A15: //no break
+        case APPLE_A16: //no break
         case APPLE_M2:
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {32, 32};
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {832, 32};
@@ -71,6 +76,7 @@ struct ShaderCache {
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {448, 384};
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {1024, 1024};
           break;
+        case APPLE_A14: //no break
         case APPLE_M1:
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {256, 128};
           occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {768, 32};
@@ -302,6 +308,9 @@ void ShaderCache::load_kernel(DeviceKernel device_kernel,
        * limit. */
       int max_mtlcompiler_threads = 2;
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+      max_mtlcompiler_threads = 1; //iOS often fails on concurrent compilations
+#else
 #  if defined(MAC_OS_VERSION_13_3)
       if (@available(macOS 13.3, *)) {
         /* Subtract one to avoid contention with the real-time GPU module. */
@@ -309,6 +318,7 @@ void ShaderCache::load_kernel(DeviceKernel device_kernel,
                                       int([mtlDevice maximumConcurrentCompilationTaskCount]) - 1);
       }
 #  endif
+#endif
 
       metal_printf("Spawning %d Cycles kernel compilation threads\n", max_mtlcompiler_threads);
       for (int i = 0; i < max_mtlcompiler_threads; i++) {

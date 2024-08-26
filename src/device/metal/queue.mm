@@ -293,7 +293,10 @@ int MetalDeviceQueue::num_concurrent_states(const size_t state_size) const
     if (MetalInfo::get_apple_gpu_architecture(metal_device_->mtlDevice) != APPLE_M1) {
       size_t system_ram = system_physical_ram();
       size_t allocated_so_far = [metal_device_->mtlDevice currentAllocatedSize];
-      size_t max_recommended_working_set = [metal_device_->mtlDevice recommendedMaxWorkingSetSize];
+        size_t max_recommended_working_set = system_ram / 2;
+        if (@available(macos 10.12, iOS 16.0, *)) {
+            max_recommended_working_set = [metal_device_->mtlDevice recommendedMaxWorkingSetSize];
+        }
 
       /* Determine whether we can double the state count, and leave enough GPU-available memory
        * (1/8 the system RAM or 1GB - whichever is largest). Enlarging the state size allows us to
@@ -404,10 +407,14 @@ bool MetalDeviceQueue::enqueue(DeviceKernel kernel,
            plain_old_launch_data_size);
 
     /* Allocate an argument buffer. */
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    MTLResourceOptions arg_buffer_options = MTLResourceStorageModeShared;
+#else
     MTLResourceOptions arg_buffer_options = MTLResourceStorageModeManaged;
     if ([mtlDevice_ hasUnifiedMemory]) {
       arg_buffer_options = MTLResourceStorageModeShared;
     }
+#endif      
 
     id<MTLBuffer> arg_buffer = temp_buffer_pool_.get_buffer(mtlDevice_,
                                                             mtlCommandBuffer_,
@@ -522,9 +529,11 @@ bool MetalDeviceQueue::enqueue(DeviceKernel kernel,
       bytes_written = metal_offsets + metal_device_->mtlAncillaryArgEncoder.encodedLength;
     }
 
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
     if (arg_buffer.storageMode == MTLStorageModeManaged) {
       [arg_buffer didModifyRange:NSMakeRange(0, bytes_written)];
     }
+#endif
 
     [mtlComputeCommandEncoder setBuffer:arg_buffer offset:0 atIndex:0];
     [mtlComputeCommandEncoder setBuffer:arg_buffer offset:globals_offsets atIndex:1];
@@ -825,10 +834,12 @@ void MetalDeviceQueue::copy_from_device(device_memory &mem)
       const size_t size = mem.memory_size();
 
       if (mem.device_pointer) {
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0      
         if ([mmem.mtlBuffer storageMode] == MTLStorageModeManaged) {
           id<MTLBlitCommandEncoder> blitEncoder = get_blit_encoder();
           [blitEncoder synchronizeResource:mmem.mtlBuffer];
         }
+#endif
         if (mem.host_pointer != mmem.hostPtr) {
           if (mtlCommandBuffer_) {
             copy_back_mem_.push_back({mem.host_pointer, mmem.hostPtr, size});

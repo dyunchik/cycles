@@ -45,7 +45,12 @@ struct BVHMetalBuildThrottler {
     id<MTLDevice> mtlDevice = MTLCreateSystemDefaultDevice();
 
     /* Set a conservative limit, but which will still only throttle in extreme cases. */
+    if (@available(macos 10.12, iOS 16.0, *)) {
     safe_wired_limit = [mtlDevice recommendedMaxWorkingSetSize] / 4;
+    }
+    else{
+        safe_wired_limit = [NSProcessInfo processInfo].physicalMemory / 8;
+    }
     bvh_throttle_printf("safe_wired_limit = %zu\n", safe_wired_limit);
   }
 
@@ -150,7 +155,7 @@ bool BVHMetal::build_BLAS_mesh(Progress &progress,
                                Geometry *const geom,
                                bool refit)
 {
-  if (@available(macos 12.0, *)) {
+  if (@available(macos 12.0, iOS 15.0, *)) {
     /* Build BLAS for triangle primitives */
     Mesh *const mesh = static_cast<Mesh *const>(geom);
     if (mesh->num_triangles() == 0) {
@@ -175,6 +180,9 @@ bool BVHMetal::build_BLAS_mesh(Progress &progress,
       num_motion_steps = mesh->get_motion_steps();
     }
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    MTLResourceOptions storage_mode = MTLResourceStorageModeShared;
+#else
     MTLResourceOptions storage_mode;
     if (mtl_device.hasUnifiedMemory) {
       storage_mode = MTLResourceStorageModeShared;
@@ -182,6 +190,7 @@ bool BVHMetal::build_BLAS_mesh(Progress &progress,
     else {
       storage_mode = MTLResourceStorageModeManaged;
     }
+#endif
 
     /* Upload the mesh data to the GPU */
     id<MTLBuffer> posBuf = nil;
@@ -209,9 +218,11 @@ bool BVHMetal::build_BLAS_mesh(Progress &progress,
         }
         memcpy(dest_data + num_verts * step, verts, num_verts * sizeof(float3));
       }
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
       if (storage_mode == MTLResourceStorageModeManaged) {
         [posBuf didModifyRange:NSMakeRange(0, posBuf.length)];
       }
+#endif
     }
 
     /* Create an acceleration structure. */
@@ -371,7 +382,7 @@ bool BVHMetal::build_BLAS_hair(Progress &progress,
                                bool refit)
 {
 #  if defined(MAC_OS_VERSION_14_0)
-  if (@available(macos 14.0, *)) {
+  if (@available(macos 14.0, iOS 17.0, *)) {
     /* Build BLAS for hair curves */
     Hair *hair = static_cast<Hair *>(geom);
     if (hair->num_curves() == 0) {
@@ -391,6 +402,9 @@ bool BVHMetal::build_BLAS_hair(Progress &progress,
       num_motion_steps = hair->get_motion_steps();
     }
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    MTLResourceOptions storage_mode = MTLResourceStorageModeShared;
+#else
     MTLResourceOptions storage_mode;
     if (mtl_device.hasUnifiedMemory) {
       storage_mode = MTLResourceStorageModeShared;
@@ -398,6 +412,7 @@ bool BVHMetal::build_BLAS_hair(Progress &progress,
     else {
       storage_mode = MTLResourceStorageModeManaged;
     }
+#endif
 
     id<MTLBuffer> cpBuffer = nil;
     id<MTLBuffer> radiusBuffer = nil;
@@ -484,11 +499,13 @@ bool BVHMetal::build_BLAS_hair(Progress &progress,
         radius_ptrs.push_back(k);
       }
 
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
       if (storage_mode == MTLResourceStorageModeManaged) {
         [cpBuffer didModifyRange:NSMakeRange(0, cpBuffer.length)];
         [idxBuffer didModifyRange:NSMakeRange(0, idxBuffer.length)];
         [radiusBuffer didModifyRange:NSMakeRange(0, radiusBuffer.length)];
       }
+#endif
 
       geomDescCrv.controlPointBuffers = [NSArray arrayWithObjects:cp_ptrs.data()
                                                             count:cp_ptrs.size()];
@@ -563,11 +580,13 @@ bool BVHMetal::build_BLAS_hair(Progress &progress,
                                              length:radiusData.size() * sizeof(float)
                                             options:storage_mode];
 
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
       if (storage_mode == MTLResourceStorageModeManaged) {
         [cpBuffer didModifyRange:NSMakeRange(0, cpBuffer.length)];
         [idxBuffer didModifyRange:NSMakeRange(0, idxBuffer.length)];
         [radiusBuffer didModifyRange:NSMakeRange(0, radiusBuffer.length)];
       }
+#endif
       geomDescCrv.controlPointBuffer = cpBuffer;
       geomDescCrv.radiusBuffer = radiusBuffer;
       geomDescCrv.controlPointCount = cpData.size();
@@ -710,7 +729,7 @@ bool BVHMetal::build_BLAS_pointcloud(Progress &progress,
                                      Geometry *const geom,
                                      bool refit)
 {
-  if (@available(macos 12.0, *)) {
+  if (@available(macos 12.0, iOS 15.0, *)) {
     /* Build BLAS for point cloud */
     PointCloud *pointcloud = static_cast<PointCloud *>(geom);
     if (pointcloud->num_points() == 0) {
@@ -737,6 +756,9 @@ bool BVHMetal::build_BLAS_pointcloud(Progress &progress,
 
     const size_t num_aabbs = num_motion_steps * num_points;
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    MTLResourceOptions storage_mode = MTLResourceStorageModeShared;
+#else
     MTLResourceOptions storage_mode;
     if (mtl_device.hasUnifiedMemory) {
       storage_mode = MTLResourceStorageModeShared;
@@ -744,6 +766,7 @@ bool BVHMetal::build_BLAS_pointcloud(Progress &progress,
     else {
       storage_mode = MTLResourceStorageModeManaged;
     }
+#endif
 
     /* Allocate a GPU buffer for the AABB data and populate it */
     id<MTLBuffer> aabbBuf = [mtl_device
@@ -782,9 +805,11 @@ bool BVHMetal::build_BLAS_pointcloud(Progress &progress,
       }
     }
 
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
     if (storage_mode == MTLResourceStorageModeManaged) {
       [aabbBuf didModifyRange:NSMakeRange(0, aabbBuf.length)];
     }
+#endif
 
 #  if 0
     for (size_t i=0; i<num_aabbs && i < 400; i++) {
@@ -969,14 +994,18 @@ bool BVHMetal::build_TLAS(Progress &progress,
   /* Wait for all BLAS builds to finish. */
   g_bvh_build_throttler.wait_for_all();
 
-  if (@available(macos 12.0, *)) {
+  if (@available(macos 12.0, iOS 15.0, *)) {
     /* Defined inside available check, for return type to be available. */
     auto make_null_BLAS = [](id<MTLDevice> mtl_device,
                              id<MTLCommandQueue> queue) -> id<MTLAccelerationStructure> {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+      MTLResourceOptions storage_mode = MTLResourceStorageModeShared;
+#else
       MTLResourceOptions storage_mode = MTLResourceStorageModeManaged;
       if (mtl_device.hasUnifiedMemory) {
         storage_mode = MTLResourceStorageModeShared;
       }
+#endif
 
       id<MTLBuffer> nullBuf = [mtl_device newBufferWithLength:sizeof(float3) options:storage_mode];
 
@@ -1068,6 +1097,9 @@ bool BVHMetal::build_TLAS(Progress &progress,
       }
     };
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    MTLResourceOptions storage_mode = MTLResourceStorageModeShared;
+#else
     MTLResourceOptions storage_mode;
     if (mtl_device.hasUnifiedMemory) {
       storage_mode = MTLResourceStorageModeShared;
@@ -1075,6 +1107,7 @@ bool BVHMetal::build_TLAS(Progress &progress,
     else {
       storage_mode = MTLResourceStorageModeManaged;
     }
+#endif
 
     size_t instance_size;
     if (motion_blur) {
@@ -1229,6 +1262,7 @@ bool BVHMetal::build_TLAS(Progress &progress,
       }
     }
 
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
     if (storage_mode == MTLResourceStorageModeManaged) {
       [instanceBuf didModifyRange:NSMakeRange(0, instanceBuf.length)];
       if (motion_transforms_buf) {
@@ -1236,6 +1270,7 @@ bool BVHMetal::build_TLAS(Progress &progress,
         assert(num_motion_transforms == motion_transform_index);
       }
     }
+#endif
 
     MTLInstanceAccelerationStructureDescriptor *accelDesc =
         [MTLInstanceAccelerationStructureDescriptor descriptor];

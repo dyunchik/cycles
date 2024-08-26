@@ -86,11 +86,15 @@ MetalDevice::MetalDevice(const DeviceInfo &info, Stats &stats, Profiler &profile
 
     /* determine default storage mode based on whether UMA is supported */
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    default_storage_mode = MTLResourceStorageModeShared;
+#else
     default_storage_mode = MTLResourceStorageModeManaged;
 
     if ([mtlDevice hasUnifiedMemory]) {
       default_storage_mode = MTLResourceStorageModeShared;
     }
+#endif
 
     switch (device_vendor) {
       default:
@@ -577,7 +581,7 @@ void MetalDevice::compile_and_load(int device_id, MetalPipelineType pso_type)
     MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
 
 #  if defined(MAC_OS_VERSION_13_0)
-    if (@available(macos 13.0, *)) {
+    if (@available(macos 13.0, iOS 16.0, *)) {
       if (device_vendor == METAL_GPU_INTEL) {
         [options setOptimizationLevel:MTLLibraryOptimizationLevelSize];
       }
@@ -585,7 +589,7 @@ void MetalDevice::compile_and_load(int device_id, MetalPipelineType pso_type)
 #  endif
 
     options.fastMathEnabled = YES;
-    if (@available(macos 12.0, *)) {
+    if (@available(macos 12.0, iOS 15.0, *)) {
       options.languageVersion = MTLLanguageVersion2_4;
     }
 #  if defined(MAC_OS_VERSION_13_0)
@@ -594,7 +598,7 @@ void MetalDevice::compile_and_load(int device_id, MetalPipelineType pso_type)
     }
 #  endif
 #  if defined(MAC_OS_VERSION_14_0)
-    if (@available(macos 14.0, *)) {
+    if (@available(macos 14.0, iOS 17.0, *)) {
       options.languageVersion = MTLLanguageVersion3_1;
     }
 #  endif
@@ -688,10 +692,12 @@ void MetalDevice::load_texture_info()
         [mtlTextureArgEncoder setTexture:nil atIndex:0];
       }
     }
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
     if (default_storage_mode == MTLResourceStorageModeManaged) {
       [texture_bindings_2d didModifyRange:NSMakeRange(0, num_textures * sizeof(void *))];
       [texture_bindings_3d didModifyRange:NSMakeRange(0, num_textures * sizeof(void *))];
     }
+#endif
   }
 }
 
@@ -718,7 +724,10 @@ bool MetalDevice::max_working_set_exceeded(size_t safety_margin) const
 {
   /* We're allowed to allocate beyond the safe working set size, but then if all resources are made
    * resident we will get command buffer failures at render time. */
-  size_t available = [mtlDevice recommendedMaxWorkingSetSize] - safety_margin;
+  size_t available = ([NSProcessInfo processInfo].physicalMemory / 2) - safety_margin;
+  if (@available(macos 10.12, iOS 16.0, *)) {
+    available = [mtlDevice recommendedMaxWorkingSetSize] - safety_margin;
+  }
   return (stats.mem_used > available);
 }
 
@@ -813,9 +822,11 @@ void MetalDevice::generic_copy_to(device_memory &mem)
   if (!metal_mem_map.at(&mem)->use_UMA || mem.host_pointer != mem.shared_pointer) {
     MetalMem &mmem = *metal_mem_map.at(&mem);
     memcpy(mmem.hostPtr, mem.host_pointer, mem.memory_size());
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
     if (mmem.mtlBuffer.storageMode == MTLStorageModeManaged) {
       [mmem.mtlBuffer didModifyRange:NSMakeRange(0, mem.memory_size())];
     }
+#endif
   }
 }
 
@@ -907,6 +918,7 @@ void MetalDevice::mem_copy_from(device_memory &mem, size_t y, size_t w, size_t h
         std::lock_guard<std::recursive_mutex> lock(metal_mem_map_mutex);
         MetalMem &mmem = *metal_mem_map.at(&mem);
 
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
         if ([mmem.mtlBuffer storageMode] == MTLStorageModeManaged) {
 
           id<MTLCommandBuffer> cmdBuffer = [mtlGeneralCommandQueue commandBuffer];
@@ -916,6 +928,7 @@ void MetalDevice::mem_copy_from(device_memory &mem, size_t y, size_t w, size_t h
           [cmdBuffer commit];
           [cmdBuffer waitUntilCompleted];
         }
+#endif
 
         if (mem.host_pointer != mmem.hostPtr) {
           memcpy((uchar *)mem.host_pointer + offset, (uchar *)mmem.hostPtr + offset, size);
@@ -941,9 +954,11 @@ void MetalDevice::mem_zero(device_memory &mem)
   std::lock_guard<std::recursive_mutex> lock(metal_mem_map_mutex);
   MetalMem &mmem = *metal_mem_map.at(&mem);
   memset(mmem.hostPtr, 0, size);
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
   if ([mmem.mtlBuffer storageMode] == MTLStorageModeManaged) {
     [mmem.mtlBuffer didModifyRange:NSMakeRange(0, size)];
   }
+#endif
 }
 
 void MetalDevice::mem_free(device_memory &mem)
@@ -1158,11 +1173,15 @@ void MetalDevice::tex_alloc(device_texture &mem)
         return;
       }
     }
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+    MTLStorageMode storage_mode = MTLStorageModeShared;
+#else
     MTLStorageMode storage_mode = MTLStorageModeManaged;
     /* Intel GPUs don't support MTLStorageModeShared for MTLTextures. */
     if ([mtlDevice hasUnifiedMemory] && device_vendor != METAL_GPU_INTEL) {
       storage_mode = MTLStorageModeShared;
     }
+#endif
 
     /* General variables for both architectures */
     string bind_name = mem.name;
@@ -1480,9 +1499,11 @@ void MetalDevice::update_bvh(BVHMetal *bvh_metal)
       [mtlBlasArgEncoder setAccelerationStructure:bvh_metal->blas_array[i] atIndex:0];
     }
   }
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
   if (default_storage_mode == MTLResourceStorageModeManaged) {
     [blas_buffer didModifyRange:NSMakeRange(0, blas_buffer.length)];
   }
+#endif
 }
 
 CCL_NAMESPACE_END

@@ -32,7 +32,7 @@ string MetalInfo::get_device_name(id<MTLDevice> device)
 int MetalInfo::get_apple_gpu_core_count(id<MTLDevice> device)
 {
   int core_count = 0;
-  if (@available(macos 12.0, *)) {
+  if (@available(macos 12.0, iOS 15.0, *)) {
     io_service_t gpu_service = IOServiceGetMatchingService(
         kIOMainPortDefault, IORegistryEntryIDMatching(device.registryID));
     if (CFNumberRef numberRef = (CFNumberRef)IORegistryEntryCreateCFProperty(
@@ -54,6 +54,21 @@ AppleGPUArchitecture MetalInfo::get_apple_gpu_architecture(id<MTLDevice> device)
   }
 
   const char *device_name = [device.name UTF8String];
+  if (strstr(device_name, "A10") || strstr(device_name, "A11") || strstr(device_name, "A12") || strstr(device_name, "A13"))
+    return APPLE_A1X;
+  if (strstr(device_name, "A14"))
+    return APPLE_A14;
+  if (strstr(device_name, "A15"))
+    return APPLE_A15;
+  if (strstr(device_name, "A16"))
+    return APPLE_A16;
+  if (strstr(device_name, "A17"))
+    return APPLE_A17;
+  if (strstr(device_name, "A18"))
+    return APPLE_A18;
+  if (strstr(device_name, "A19"))
+    return APPLE_A19;
+
   if (strstr(device_name, "M1")) {
     return APPLE_M1;
   }
@@ -114,14 +129,21 @@ vector<id<MTLDevice>> const &MetalInfo::get_usable_devices()
   /* If the system has both an AMD GPU (discrete) and an Intel one (integrated), prefer the AMD
    * one. This can be overridden with CYCLES_METAL_FORCE_INTEL. */
   bool has_usable_amd_gpu = false;
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
   if (@available(macos 12.3, *)) {
     for (id<MTLDevice> device in MTLCopyAllDevices()) {
       has_usable_amd_gpu |= (get_device_vendor(device) == METAL_GPU_AMD);
     }
   }
+#endif
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+      NSArray* devices = [NSArray arrayWithObject: MTLCreateSystemDefaultDevice()];
+#else
+      NSArray* devices = MTLCopyAllDevices();
+#endif
   metal_printf("Usable Metal devices:\n");
-  for (id<MTLDevice> device in MTLCopyAllDevices()) {
+  for (id<MTLDevice> device in devices) {
     string device_name = get_device_name(device);
     MetalGPUVendor vendor = get_device_vendor(device);
     bool usable = false;
@@ -129,6 +151,10 @@ vector<id<MTLDevice>> const &MetalInfo::get_usable_devices()
     if (@available(macos 12.2, *)) {
       usable |= (vendor == METAL_GPU_APPLE);
     }
+
+    //Apple device should support at least MTLGPUFamilyApple7
+    if(usable && ![device supportsFamily:MTLGPUFamilyApple7])
+        usable = false;
 
     if (@available(macos 12.3, *)) {
       usable |= (vendor == METAL_GPU_AMD);
@@ -198,9 +224,11 @@ id<MTLBuffer> MetalBufferPool::get_buffer(id<MTLDevice> device,
   /* Copy over data */
   if (pointer) {
     memcpy(buffer.contents, pointer, length);
+#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
     if (buffer.storageMode == MTLStorageModeManaged) {
       [buffer didModifyRange:NSMakeRange(0, length)];
     }
+#endif          
   }
 
   return buffer;

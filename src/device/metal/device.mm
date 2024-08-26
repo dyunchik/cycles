@@ -87,7 +87,7 @@ void device_metal_info(vector<DeviceInfo> &devices)
      * expose it in builds from older Xcode versions. */
 #  if defined(MAC_OS_VERSION_14_0)
     if (vendor != METAL_GPU_INTEL) {
-      if (@available(macos 14.0, *)) {
+      if (@available(macos 14.0, iOS 14.0, *)) {
         info.use_hardware_raytracing = device.supportsRaytracing;
 
         /* Use hardware raytracing for faster rendering on architectures that support it. */
@@ -110,7 +110,11 @@ void device_metal_info(vector<DeviceInfo> &devices)
 string device_metal_capabilities()
 {
   string result = "";
-  auto allDevices = MTLCopyAllDevices();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
+      NSArray* allDevices = [NSArray arrayWithObject: MTLCreateSystemDefaultDevice()];
+#else
+      NSArray* allDevices = MTLCopyAllDevices();
+#endif
   uint32_t num_devices = (uint32_t)allDevices.count;
   if (num_devices == 0) {
     return "No Metal devices found\n";
