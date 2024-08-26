@@ -130,6 +130,7 @@ bool OIDNDenoiserGPU::is_device_supported(const DeviceInfo &device)
       return false;
   }
 
+#if OIDN_VERSION_MAJOR >= 2
   /* Match GPUs by their PCI ID. */
   const int num_devices = oidnGetNumPhysicalDevices();
   VLOG_DEBUG << "Found " << num_devices << " OIDN device(s)";
@@ -155,6 +156,7 @@ bool OIDNDenoiserGPU::is_device_supported(const DeviceInfo &device)
       }
     }
   }
+#endif
   VLOG_DEBUG << "No matched OIDN device found";
   return false;
 #  endif
