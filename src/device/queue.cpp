@@ -7,6 +7,9 @@
 #include "util/algorithm.h"
 #include "util/log.h"
 #include "util/time.h"
+#ifdef _WIN32
+#include "util/windows.h"
+#endif // _WIN32
 
 #include <iomanip>
 
