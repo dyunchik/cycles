@@ -19,7 +19,13 @@ OIIO_NAMESPACE_USING
 
 #include <sys/stat.h>
 
+#if (defined(_WIN32) && WINAPI_FAMILY == WINAPI_FAMILY_APP) || defined(__APPLE__)
+#define NO_ZSTD 1
+#endif
+
+#ifndef NO_ZSTD
 #include <zstd.h>
+#endif
 
 #if defined(_WIN32)
 #  define DIR_SEP '\\'
@@ -286,11 +292,11 @@ size_t find_last_slash(const string &path)
 
 } /* namespace */
 
-static char *path_specials(const string &sub)
+static const char *path_specials(const string &sub)
 {
   static bool env_init = false;
-  static char *env_shader_path;
-  static char *env_source_path;
+  static const char *env_shader_path;
+  static const char *env_source_path;
   if (!env_init) {
     env_shader_path = getenv("CYCLES_SHADER_PATH");
     /* NOTE: It is KERNEL in env variable for compatibility reasons. */
@@ -338,7 +344,7 @@ void path_init(const string &path, const string &user_path)
 
 string path_get(const string &sub)
 {
-  char *special = path_specials(sub);
+  const char *special = path_specials(sub);
   if (special != NULL) {
     return special;
   }
@@ -712,6 +718,9 @@ bool path_read_compressed_binary(const string &path, vector<uint8_t> &binary)
     return path_read_binary(path, binary);
   }
 
+#ifdef NO_ZSTD
+    return false;
+#else
   vector<uint8_t> compressed;
   if (!path_read_binary(path, compressed)) {
     return false;
@@ -734,6 +743,7 @@ bool path_read_compressed_binary(const string &path, vector<uint8_t> &binary)
   size_t err = ZSTD_decompress(binary.data(), binary.size(), compressed.data(), compressed.size());
 
   return ZSTD_isError(err) == 0;
+#endif
 }
 
 bool path_read_text(const string &path, string &text)
