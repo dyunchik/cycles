@@ -35,6 +35,8 @@
 
 #include "app/cycles_xml.h"
 
+#define BELIGHT_WITH_XML_SUBMESHES
+
 CCL_NAMESPACE_BEGIN
 
 /* XML reading state */
@@ -47,8 +49,17 @@ struct XMLReadState : public XMLReader {
   string base;       /* Base path to current file. */
   float dicing_rate; /* Current dicing rate. */
   Object *object;    /* Current object. */
+#ifdef BELIGHT_WITH_XML_SUBMESHES
+  bool cast_shadow;
+  bool invisible_for_camera;
+  map<string, size_t>* geometry_map;
+#endif
 
+#ifdef BELIGHT_WITH_XML_SUBMESHES
+  XMLReadState() : scene(NULL), smooth(false), shader(NULL), dicing_rate(1.0f), object(NULL), cast_shadow(true), invisible_for_camera(false), geometry_map(nullptr)
+#else
   XMLReadState() : scene(NULL), smooth(false), shader(NULL), dicing_rate(1.0f), object(NULL)
+#endif
   {
     tfm = transform_identity();
   }
@@ -406,6 +417,237 @@ static void xml_read_background(XMLReadState &state, xml_node node)
 
 /* Mesh */
 
+#ifdef BELIGHT_WITH_XML_SUBMESHES
+static Mesh* xml_add_mesh(const XMLReadState& state, const string& unique_name)
+{
+  bool foundMesh = false;
+  Mesh* mesh = nullptr;
+  
+  if (state.geometry_map && !unique_name.empty())
+  {
+    auto foundIt = state.geometry_map->find(unique_name);
+    if (foundIt != state.geometry_map->end())
+    {
+      mesh = (Mesh*)state.scene->geometry[foundIt->second];
+      foundMesh = true;
+    }
+  }
+  
+  /* create mesh */
+  if (!mesh)
+  {
+    mesh = new Mesh();
+    state.scene->geometry.push_back(mesh);
+    
+    if (state.geometry_map && !unique_name.empty())
+    {
+      assert(state.scene->geometry.size() > 0);
+      (*state.geometry_map)[unique_name] = state.scene->geometry.size() - 1;
+    }
+  }
+
+  /* Create object. */
+  Object* object = new Object();
+  object->set_geometry(mesh);
+  object->set_tfm(state.tfm);
+    
+  if (!state.cast_shadow)
+    object->set_visibility(object->get_visibility() & ~PATH_RAY_SHADOW);
+  if (state.invisible_for_camera)
+    object->set_visibility(object->get_visibility() & ~PATH_RAY_CAMERA);
+    
+  state.scene->objects.push_back(object);
+
+  return foundMesh ? nullptr : mesh;
+}
+
+static void xml_read_mesh_with_submeshes(const XMLReadState &state, xml_node node)
+{
+  /* don't support */
+  if (xml_equal_string(node, "subdivision", "catmull-clark") || xml_equal_string(node, "subdivision", "linear"))
+    return;
+  
+  /* add mesh */
+  string unique_name;
+  xml_read_string(&unique_name, node, "name");
+  
+  Mesh* mesh = xml_add_mesh(state, unique_name);
+  if (!mesh)
+    return;
+  
+  if (mesh->get_subdivision_type() != Mesh::SUBDIVISION_NONE)
+    return;
+  
+  /* read state */
+  bool smooth = state.smooth;
+
+  /* read vertices */
+  vector<float3> P;
+  xml_read_float3_array(P, node, "P");
+
+  array<float3> P_array;
+  P_array = P;
+  
+  mesh->set_verts(P_array);
+  
+  int num_triangles = 0;
+  vector<vector<int>> submeshes_verts;
+  for (xml_node sub_node = node.first_child(); sub_node; sub_node = sub_node.next_sibling())
+  {
+    if (string_iequals(sub_node.name(), "submesh"))
+    {
+      submeshes_verts.push_back(vector<int>());
+      xml_read_int_array(submeshes_verts.back(), sub_node, "verts");
+      
+      assert(submeshes_verts.back().size() % 3 == 0);
+      num_triangles += (submeshes_verts.back().size() / 3);
+    }
+  }
+  
+  assert(num_triangles > 0);
+  if (num_triangles > 0)
+    mesh->reserve_mesh((int)mesh->get_verts().size(), num_triangles);
+  
+  int submesh_idx = 0;
+  for (xml_node sub_node = node.first_child(); sub_node; sub_node = sub_node.next_sibling())
+  {
+    if (string_iequals(sub_node.name(), "submesh"))
+    {
+      /* read shader */
+      string curShaderName;
+      Shader* curShader = nullptr;
+      
+      if (xml_read_string(&curShaderName, sub_node, "shader"))
+      {
+        foreach (Shader* shader, state.scene->shaders)
+        {
+          if (shader->name == curShaderName)
+          {
+            curShader = shader;
+            break;
+          }
+        }
+      }
+      
+      if (!curShader)
+      {
+        fprintf(stderr, "Unknown shader \"%s\".\n", curShaderName.c_str());
+        curShader = state.shader;
+      }
+      
+      array<Node*> used_shaders = mesh->get_used_shaders();
+      int shaderIdx = (int)used_shaders.size();
+      
+      used_shaders.push_back_slow(curShader);
+      mesh->set_used_shaders(used_shaders);
+      
+      /* create triangles */
+      assert(submesh_idx < submeshes_verts.size());
+      const vector<int>& verts = submeshes_verts[submesh_idx++];
+      
+      assert(verts.size() % 3 == 0);
+      for (size_t i = 0; i < verts.size(); i += 3)
+      {
+          int v0 = verts[i];
+          int v1 = verts[i + 1];
+          int v2 = verts[i + 2];
+
+          assert(v0 < (int)P.size());
+          assert(v1 < (int)P.size());
+          assert(v2 < (int)P.size());
+
+          mesh->add_triangle(v0, v1, v2, shaderIdx, smooth);
+      }
+    }
+  }
+  
+  vector<float3> N;
+  if (xml_read_float3_array(N, node, "N"))
+  {
+    Attribute* attr = mesh->attributes.add(ATTR_STD_VERTEX_NORMAL);
+    
+    assert(N.size() == mesh->get_verts().size());
+    memcpy(attr->data_float3(), N.data(), N.size() * sizeof(float3));
+  }
+    
+  vector<float> UV;
+  bool haveUV = xml_read_float_array(UV, node, "UV") && !UV.empty();
+  
+  vector<float> Tg;
+  bool haveTangents = xml_read_float_array(Tg, node, "Tg") && !Tg.empty();
+  
+  if (haveUV || haveTangents)
+  {
+    float2* uv_data = nullptr;
+    if (haveUV)
+    {
+      Attribute* uv_attr = mesh->attributes.add(ATTR_STD_UV);
+      uv_data = uv_attr ? uv_attr->data_float2() : nullptr;
+    }
+    
+    float3* tangent_data = nullptr;
+    float* tangent_sign_data = nullptr;
+    if (haveTangents)
+    {
+      Attribute* tangent_attr = mesh->attributes.add(ATTR_STD_UV_TANGENT);
+      Attribute* tangent_sign_attr = mesh->attributes.add(ATTR_STD_UV_TANGENT_SIGN);
+      tangent_data = tangent_attr ? tangent_attr->data_float3() : nullptr;
+      tangent_sign_data = tangent_sign_attr ? tangent_sign_attr->data_float() : nullptr;
+    }
+    
+    assert(uv_data || (tangent_data && tangent_sign_data));
+    for (size_t i = 0; i < submeshes_verts.size(); ++i)
+    {
+      const vector<int>& verts = submeshes_verts[i];
+      
+      for (size_t i = 0; i < verts.size(); i += 3)
+      {
+        int v0 = verts[i];
+        int v1 = verts[i + 1];
+        int v2 = verts[i + 2];
+
+        if (uv_data)
+        {
+          assert(v0 * 2 + 1 < UV.size());
+          assert(v1 * 2 + 1 < UV.size());
+          assert(v2 * 2 + 1 < UV.size());
+          
+          uv_data[0] = make_float2(UV[v0 * 2], UV[v0 * 2 + 1]);
+          uv_data[1] = make_float2(UV[v1 * 2], UV[v1 * 2 + 1]);
+          uv_data[2] = make_float2(UV[v2 * 2], UV[v2 * 2 + 1]);
+          uv_data += 3;
+        }
+        
+        if (tangent_data && tangent_sign_data)
+        {
+          assert(v0 * 4 + 3 < Tg.size());
+          assert(v1 * 4 + 3 < Tg.size());
+          assert(v2 * 4 + 3 < Tg.size());
+          
+          tangent_data[0] = make_float3(Tg[v0 * 4], Tg[v0 * 4 + 1], Tg[v0 * 4 + 2]);
+          tangent_data[1] = make_float3(Tg[v1 * 4], Tg[v1 * 4 + 1], Tg[v1 * 4 + 2]);
+          tangent_data[2] = make_float3(Tg[v2 * 4], Tg[v2 * 4 + 1], Tg[v2 * 4 + 2]);
+          tangent_data += 3;
+          
+          tangent_sign_data[0] = Tg[v0 * 4 + 3];
+          tangent_sign_data[1] = Tg[v1 * 4 + 3];
+          tangent_sign_data[2] = Tg[v2 * 4 + 3];
+          tangent_sign_data += 3;
+        }
+      }
+    }
+  }
+  
+  /* we don't yet support arbitrary attributes, for now add vertex
+   * coordinates as generated coordinates if requested */
+  if (mesh->need_attribute(state.scene, ATTR_STD_GENERATED))
+  {
+    Attribute* attr = mesh->attributes.add(ATTR_STD_GENERATED);
+    memcpy(attr->data_float3(), mesh->get_verts().data(), sizeof(float3) * mesh->get_verts().size());
+  }
+}
+#endif
+
 static Mesh *xml_add_mesh(Scene *scene, const Transform &tfm, Object *object)
 {
   if (object && object->get_geometry()->is_mesh()) {
@@ -507,8 +749,7 @@ static void xml_read_mesh(const XMLReadState &state, xml_node node)
 
     /* UV map */
     if (xml_read_float_array(UV, node, "UV") ||
-        xml_read_float_array(UV, node, Attribute::standard_name(ATTR_STD_UV)))
-    {
+        xml_read_float_array(UV, node, Attribute::standard_name(ATTR_STD_UV))) {
       Attribute *attr = mesh->attributes.add(ATTR_STD_UV);
       float2 *fdata = attr->data_float2();
 
@@ -739,6 +980,15 @@ static void xml_read_state(XMLReadState &state, xml_node node)
   else if (xml_equal_string(node, "interpolation", "flat")) {
     state.smooth = false;
   }
+    
+#ifdef BELIGHT_WITH_XML_SUBMESHES
+  /* in any other case => state.cast_shadow = true */
+  if (xml_equal_string(node, "cast_shadow", "false"))
+    state.cast_shadow = false;
+  /* in any other case => state.invisible_for_camera = false */
+  if (xml_equal_string(node, "invisible_for_camera", "true"))
+    state.invisible_for_camera = true;
+#endif
 }
 
 /* Object */
@@ -783,9 +1033,29 @@ static void xml_read_scene(XMLReadState &state, xml_node scene_node)
     else if (string_iequals(node.name(), "background")) {
       xml_read_background(state, node);
     }
+#ifdef BELIGHT_WITH_XML_SUBMESHES
+    else if (string_iequals(node.name(), "mesh"))
+    {
+      bool hasSubmeshes = false;
+      for (xml_node sub_node = node.first_child(); sub_node; sub_node = sub_node.next_sibling())
+      {
+        if (string_iequals(sub_node.name(), "submesh"))
+        {
+          hasSubmeshes = true;
+          break;
+        }
+      }
+      
+      if (hasSubmeshes)
+        xml_read_mesh_with_submeshes(state, node);
+      else
+        xml_read_mesh(state, node);
+    }
+#else
     else if (string_iequals(node.name(), "mesh")) {
       xml_read_mesh(state, node);
     }
+#endif
     else if (string_iequals(node.name(), "light")) {
       xml_read_light(state, node);
     }
@@ -861,6 +1131,11 @@ void xml_read_file(Scene *scene, const char *filepath)
   state.smooth = false;
   state.dicing_rate = 1.0f;
   state.base = path_dirname(filepath);
+
+#ifdef BELIGHT_WITH_XML_SUBMESHES
+  map<string, size_t> geometry_map;
+  state.geometry_map = &geometry_map;
+#endif
 
   xml_read_include(state, path_filename(filepath));
 
