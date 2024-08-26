@@ -10,6 +10,10 @@
 
 #include "util/log.h"
 #include "util/string.h"
+#ifdef _WIN32
+#include "util/windows.h"
+#endif // _WIN32
+
 
 CCL_NAMESPACE_BEGIN
 

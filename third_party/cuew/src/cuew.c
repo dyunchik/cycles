@@ -33,12 +33,28 @@
 #  define WIN32_LEAN_AND_MEAN
 #  define VC_EXTRALEAN
 #  include <windows.h>
+#if defined(UNICODE) || WINAPI_FAMILY == WINAPI_FAMILY_APP
+#include <malloc.h>
+#endif
 
 /* Utility macros. */
 
 typedef HMODULE DynamicLibrary;
 
+#if WINAPI_FAMILY == WINAPI_FAMILY_APP
+static DynamicLibrary dynamic_library_open(const char* path)
+{
+	int path_len = path != NULL ? (int)strlen(path) : 0;
+	if (path == 0)
+		return (DynamicLibrary)0;
+	int wsize_need = MultiByteToWideChar(CP_UTF8, 0, path, path_len, NULL, 0);
+	LPWSTR lpwLibFileName = (LPWSTR)alloca((wsize_need+1) * sizeof(WCHAR));
+	MultiByteToWideChar(CP_UTF8, 0, path, path_len, lpwLibFileName, wsize_need);
+	return LoadPackagedLibrary(lpwLibFileName, 0);
+}
+#else
 #  define dynamic_library_open(path) LoadLibraryA(path)
+#endif
 #  define dynamic_library_close(lib) FreeLibrary(lib)
 #  define dynamic_library_find(lib, symbol) GetProcAddress(lib, symbol)
 #else
@@ -865,6 +881,7 @@ static int path_exists(const char *path)
 
 const char *cuewCompilerPath(void)
 {
+#if !defined(_WIN32) || WINAPI_FAMILY != WINAPI_FAMILY_APP
 #ifdef _WIN32
   const char *defaultpaths[] = {
       "C:/CUDA/bin", "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v10.1/bin", NULL};
@@ -916,6 +933,7 @@ const char *cuewCompilerPath(void)
       }
     }
   }
+#endif
 
   return NULL;
 }
@@ -932,6 +950,7 @@ int cuewNvrtcVersion(void)
 
 int cuewCompilerVersion(void)
 {
+#if !defined(_WIN32) || WINAPI_FAMILY != WINAPI_FAMILY_APP
   const char *path = cuewCompilerPath();
   const char *marker = "Cuda compilation tools, release ";
   FILE *pipe;
@@ -977,4 +996,7 @@ int cuewCompilerVersion(void)
   }
 
   return 10 * major + minor;
+#else
+	return 0;
+#endif
 }

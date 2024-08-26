@@ -29,7 +29,11 @@ string string_printf(const char *format, ...)
     int result;
 
     va_start(args, format);
+#ifdef _WIN32
+	result = vsnprintf_s(&str[0], str.size(), str.size()-1, format, args);
+#else
     result = vsnprintf(&str[0], str.size(), format, args);
+#endif
     va_end(args);
 
     if (result == -1) {

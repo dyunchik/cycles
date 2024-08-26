@@ -200,16 +200,34 @@ static void hipewHipExit(void) {
 }
 
 #ifdef _WIN32
-static int hipewHasOldDriver(const char *hip_path) {
+static int hipewHasOldDriver(const char *hip_path)
+{
+#if WINAPI_FAMILY == WINAPI_FAMILY_APP
+  return 0;
+#else
   DWORD verHandle = 0;
-  DWORD verSize = GetFileVersionInfoSizeA(hip_path, &verHandle);
+#ifdef UNICODE
+  int hip_path_len = hip_path!=NULL ? (int)strlen(hip_path) : 0;
+  if (hip_path_len == 0)
+	  return 0;
+  int wsize_need = MultiByteToWideChar(CP_UTF8, 0, hip_path, hip_path_len, NULL, 0);
+  LPWSTR hip_pathW = (LPWSTR)alloca(wsize_need * sizeof(WCHAR));
+  MultiByteToWideChar(CP_UTF8, 0, hip_path, hip_path_len, hip_pathW, wsize_need);
+  DWORD verSize = GetFileVersionInfoSizeW(hip_pathW, &verHandle);
+#else
+  DWORD verSize = GetFileVersionInfoSize(hip_path, &verHandle);
+#endif
   int old_driver = 0;
   if (verSize != 0) {
     LPSTR verData = (LPSTR)malloc(verSize);
-    if (GetFileVersionInfoA(hip_path, verHandle, verSize, verData)) {
+#ifdef UNICODE
+	if (GetFileVersionInfoW(hip_pathW, verHandle, verSize, verData)) {
+#else
+    if (GetFileVersionInfo(hip_path, verHandle, verSize, verData)) {
+#endif
       LPBYTE lpBuffer = NULL;
       UINT size = 0;
-      if (VerQueryValueA(verData, "\\", (VOID FAR * FAR *)&lpBuffer, &size)) {
+      if (VerQueryValue(verData, TEXT("\\"), (VOID FAR * FAR *)&lpBuffer, &size)) {
         if (size) {
           VS_FIXEDFILEINFO *verInfo = (VS_FIXEDFILEINFO *)lpBuffer;
           /* Magic value from
@@ -226,6 +244,7 @@ static int hipewHasOldDriver(const char *hip_path) {
     free(verData);
   }
   return old_driver;
+#endif
 }
 #endif
 
@@ -531,7 +550,9 @@ static int path_exists(const char *path) {
   return 1;
 }
 
-const char *hipewCompilerPath(void) {
+const char *hipewCompilerPath(void)
+{
+#if !defined(_WIN32) || WINAPI_FAMILY != WINAPI_FAMILY_APP
     #ifdef _WIN32
     const char *hipPath = getenv("HIP_ROCCLR_HOME");
     const char *windowsCommand = "perl ";
@@ -577,11 +598,14 @@ const char *hipewCompilerPath(void) {
       }
     }
   }
+#endif
 
   return NULL;
 }
 
-int hipewCompilerVersion(void) {
+int hipewCompilerVersion(void)
+{
+#if !defined(_WIN32) || WINAPI_FAMILY != WINAPI_FAMILY_APP
   const char *path = hipewCompilerPath();
   const char *marker = "Hip compilation tools, release ";
   FILE *pipe;
@@ -611,4 +635,7 @@ int hipewCompilerVersion(void) {
 
   pclose(pipe);
   return 40;
+#else
+	return 0;
+#endif
 }

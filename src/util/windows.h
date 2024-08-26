@@ -25,6 +25,9 @@ CCL_NAMESPACE_BEGIN
 
 bool system_windows_version_at_least(int major, int build);
 
+int getenv(const char* name, char* buffer, int buffer_size);
+const char* getenv(char const* varName);
+
 CCL_NAMESPACE_END
 
 #endif /* __UTIL_WINDOWS_H__ */

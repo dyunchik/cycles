@@ -28,19 +28,23 @@ CCL_NAMESPACE_BEGIN
 
 namespace {
 
+#if !defined(_MSC_VER) || _MSC_VER <= 1940
 /* Some helpers to silence warning in templated function. */
 bool isfinite(uchar /*value*/)
 {
   return true;
 }
+#endif
 bool isfinite(half /*value*/)
 {
   return true;
 }
+#if !defined(_MSC_VER) || _MSC_VER <= 1940
 bool isfinite(uint16_t /*value*/)
 {
   return true;
 }
+#endif
 
 const char *name_from_type(ImageDataType type)
 {

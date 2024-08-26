@@ -181,7 +181,12 @@ void dump_subtree(DumpTraversalContext *context, const BVHNode *node, const BVHN
 void BVHNode::dump_graph(const char *filename)
 {
   DumpTraversalContext context;
+#ifdef _WIN32
+  FILE* fp = nullptr;
+  context.stream = fopen_s(&fp, filename, "w") ? nullptr : fp;
+#else
   context.stream = fopen(filename, "w");
+#endif // _WIN32
   if (context.stream == NULL) {
     return;
   }
