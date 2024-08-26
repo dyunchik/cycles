@@ -109,7 +109,7 @@ static void oiio_load_pixels(const ImageMetaData &metadata,
   }
 
   if (depth <= 1) {
-    size_t scanlinesize = width * components * sizeof(StorageType);
+	stride_t scanlinesize = width * components * sizeof(StorageType);
     in->read_image(0,
                    0,
                    0,
