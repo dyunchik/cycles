@@ -15,9 +15,6 @@
 #include "util/openimagedenoise.h"
 #include "util/path.h"
 
-#include "kernel/device/cpu/compat.h"
-#include "kernel/device/cpu/kernel.h"
-
 CCL_NAMESPACE_BEGIN
 
 #define OIDN_MAX_MEM    256
@@ -63,7 +60,7 @@ class OIDNPass {
     use_denoising_albedo = pass_info.use_denoising_albedo;
   }
 
-  inline operator bool() const
+  operator bool() const
   {
     return name[0] != '\0';
   }
@@ -184,7 +181,7 @@ class OIDNDenoiseContext {
 #ifdef OIDN_MAX_MEM
     oidn_filter.set("maxMemoryMB", OIDN_MAX_MEM);
 #endif
-    if (custom_weights.size()) {
+    if (!custom_weights.empty()) {
       oidn_filter.setData("weights", custom_weights.data(), custom_weights.size());
     }
     set_quality(oidn_filter);
@@ -628,7 +625,7 @@ bool OIDNDenoiser::denoise_buffer(const BufferParams &buffer_params,
       << "OpenImageDenoise is not supported on this platform or build.";
 
 #ifdef WITH_OPENIMAGEDENOISE
-  thread_scoped_lock lock(mutex_);
+  const thread_scoped_lock lock(mutex_);
 
   /* Make sure the host-side data is available for denoising. */
   unique_ptr<DeviceQueue> queue = create_device_queue(render_buffers);

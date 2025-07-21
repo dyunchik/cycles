@@ -38,33 +38,44 @@ endif()
 
 if(APPLE)
   if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/macos_x64")
+    set(_cycles_lib_platform "macos_x64")
   else()
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/macos_arm64")
+    set(_cycles_lib_platform "macos_arm64")
   endif()
 
   # Always use system zlib
   find_package(ZLIB REQUIRED)
 elseif(WIN32)
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64")
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/windows_arm64")
+    set(_cycles_lib_platform "windows_arm64")
   else()
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/windows_x64")
+    set(_cycles_lib_platform "windows_x64")
   endif()
 else()
   # Path to a locally compiled libraries.
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/linux_x64")
+    set(_cycles_lib_platform "linux_x64")
   elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/linux_arm64")
+    set(_cycles_lib_platform "linux_arm64")
   else()
-    set(_cycles_lib_dir "${CMAKE_SOURCE_DIR}/lib/linux_${CMAKE_SYSTEM_PROCESSOR}")
+    set(_cycles_lib_platform "linux_${CMAKE_SYSTEM_PROCESSOR}")
   endif()
 
   if(CMAKE_COMPILER_IS_GNUCC AND
-     CMAKE_C_COMPILER_VERSION VERSION_LESS 9.3)
-    message(FATAL_ERROR "GCC version must be at least 9.3 for precompiled libraries, found ${CMAKE_C_COMPILER_VERSION}")
+     CMAKE_C_COMPILER_VERSION VERSION_LESS 11.2)
+    message(FATAL_ERROR "GCC version must be at least 11.2 for precompiled libraries, found ${CMAKE_C_COMPILER_VERSION}")
   endif()
+endif()
+
+set(_cycles_lib_dir "${CMAKE_CURRENT_SOURCE_DIR}/lib/${_cycles_lib_platform}")
+
+# Use legacy libraries for compatibility with Houdini or USD without oneTBB.
+set(_cycles_lib_dir_legacy "${CMAKE_CURRENT_SOURCE_DIR}/lib/legacy/${_cycles_lib_platform}")
+if((HOUDINI_ROOT AND HOUDINI_VERSION_MAJOR VERSION_LESS 21) OR WITH_LEGACY_LIBRARIES)
+  set(_cycles_use_legacy_libs ON)
+  set(_cycles_lib_dir "${_cycles_lib_dir_legacy}")
+else()
+  set(_cycles_use_legacy_libs OFF)
 endif()
 
 if(EXISTS ${_cycles_lib_dir} AND WITH_LIBS_PRECOMPILED)
@@ -158,6 +169,9 @@ macro(add_bundled_libraries library_dir)
     unset(_bundled_lib)
   endif()
 endmacro()
+
+# Don't use frameworks.
+set(CMAKE_FIND_FRAMEWORK NEVER)
 
 ###########################################################################
 # USD
@@ -480,9 +494,14 @@ else()
   endif()
   unset(__boost_packages)
 
-  set(BOOST_INCLUDE_DIR ${Boost_INCLUDE_DIRS})
-  set(BOOST_LIBRARIES ${Boost_LIBRARIES})
-  set(BOOST_LIBPATH ${Boost_LIBRARY_DIRS})
+    set(BOOST_INCLUDE_DIR ${Boost_INCLUDE_DIRS})
+    set(BOOST_LIBRARIES ${Boost_LIBRARIES})
+    set(BOOST_LIBPATH ${Boost_LIBRARY_DIRS})
+  endif()
+
+  set(BOOST_DEFINITIONS "-DBOOST_ALL_NO_LIB ${BOOST_DEFINITIONS}")
+
+  add_bundled_libraries(boost/lib)
 endif()
 
 set(BOOST_DEFINITIONS "-DBOOST_ALL_NO_LIB ${BOOST_DEFINITIONS}")
@@ -497,20 +516,9 @@ if(WITH_CYCLES_EMBREE)
   if(MSVC AND EXISTS ${_cycles_lib_dir})
     set(EMBREE_ROOT_DIR ${_cycles_lib_dir}/embree)
     set(EMBREE_INCLUDE_DIRS ${EMBREE_ROOT_DIR}/include)
-
-    if(EXISTS ${EMBREE_ROOT_DIR}/include/embree4/rtcore_config.h)
-      set(EMBREE_MAJOR_VERSION 4)
-    else()
-      set(EMBREE_MAJOR_VERSION 3)
-    endif()
+    set(EMBREE_MAJOR_VERSION 4)
 
     file(READ ${EMBREE_ROOT_DIR}/include/embree${EMBREE_MAJOR_VERSION}/rtcore_config.h _embree_config_header)
-    if(_embree_config_header MATCHES "#define EMBREE_STATIC_LIB")
-      set(EMBREE_STATIC_LIB TRUE)
-    else()
-      set(EMBREE_STATIC_LIB FALSE)
-    endif()
-
     if(_embree_config_header MATCHES "#define EMBREE_SYCL_SUPPORT")
       set(EMBREE_SYCL_SUPPORT TRUE)
     else()
@@ -523,39 +531,17 @@ if(WITH_CYCLES_EMBREE)
     )
 
     if(EMBREE_SYCL_SUPPORT)
-      set(EMBREE_LIBRARIES
-        ${EMBREE_LIBRARIES}
-        optimized ${EMBREE_ROOT_DIR}/lib/embree4_sycl.lib
-        debug ${EMBREE_ROOT_DIR}/lib/embree4_sycl_d.lib
-      )
-    endif()
-
-    if(EMBREE_STATIC_LIB)
-      set(EMBREE_LIBRARIES
-        ${EMBREE_LIBRARIES}
-        optimized ${EMBREE_ROOT_DIR}/lib/embree_avx2.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/embree_avx.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/embree_sse42.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/lexers.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/math.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/simd.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/sys.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/tasking.lib
-        debug ${EMBREE_ROOT_DIR}/lib/embree_avx2_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/embree_avx_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/embree_sse42_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/lexers_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/math_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/simd_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/sys_d.lib
-        debug ${EMBREE_ROOT_DIR}/lib/tasking_d.lib
-      )
-
-      if(EMBREE_SYCL_SUPPORT)
+      # MSVC debug version of embree may have been compiled without SYCL support.
+      if(EXISTS ${EMBREE_ROOT_DIR}/lib/embree4_sycl_d.lib)
         set(EMBREE_LIBRARIES
           ${EMBREE_LIBRARIES}
-          optimized ${EMBREE_ROOT_DIR}/lib/embree_rthwif.lib
-          debug ${EMBREE_ROOT_DIR}/lib/embree_rthwif_d.lib
+          optimized ${EMBREE_ROOT_DIR}/lib/embree4_sycl.lib
+          debug ${EMBREE_ROOT_DIR}/lib/embree4_sycl_d.lib
+        )
+      else()
+        set(EMBREE_LIBRARIES
+          ${EMBREE_LIBRARIES}
+          optimized ${EMBREE_ROOT_DIR}/lib/embree4_sycl.lib
         )
       endif()
     endif()
@@ -842,6 +828,9 @@ if(WITH_CYCLES_DEVICE_HIP)
 
   # HIP RT
   if(WITH_CYCLES_DEVICE_HIP AND WITH_CYCLES_DEVICE_HIPRT)
+    if(DEFINED LIBDIR)
+      set(HIPRT_ROOT_DIR ${LIBDIR}/hiprt)
+    endif()
     find_package(HIPRT)
     set_and_warn_library_found("HIP RT" HIPRT_FOUND WITH_CYCLES_DEVICE_HIPRT)
   endif()
@@ -853,29 +842,6 @@ endif()
 
 if(NOT WITH_HIP_DYNLOAD)
   set(WITH_HIP_DYNLOAD ON)
-endif()
-
-###########################################################################
-# Metal
-###########################################################################
-
-if(WITH_CYCLES_DEVICE_METAL)
-  find_library(METAL_LIBRARY Metal)
-
-  # This file was added in the 12.0 SDK, use it as a way to detect the version.
-  if(METAL_LIBRARY)
-    if(EXISTS "${METAL_LIBRARY}/Headers/MTLFunctionStitching.h")
-      set(METAL_FOUND ON)
-    else()
-      message(STATUS "Metal version too old, must be SDK 12.0 or newer")
-      set(METAL_FOUND OFF)
-    endif()
-  endif()
-
-  set_and_warn_library_found("Metal" METAL_FOUND WITH_CYCLES_DEVICE_METAL)
-  if(METAL_FOUND)
-    message(STATUS "Found Metal: ${METAL_LIBRARY}")
-  endif()
 endif()
 
 ###########################################################################
@@ -899,7 +865,7 @@ if(WITH_CYCLES_DEVICE_ONEAPI OR EMBREE_SYCL_SUPPORT)
 
   if(DEFINED SYCL_ROOT_DIR)
     if(WIN32)
-      if(EXISTS ${SYCL_ROOT_DIR}/bin/sycl7.dll)
+      if(_cycles_use_legacy_libs)
         list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE
           ${SYCL_ROOT_DIR}/bin/sycl7.dll
           ${SYCL_ROOT_DIR}/bin/pi_level_zero.dll
@@ -910,18 +876,31 @@ if(WITH_CYCLES_DEVICE_ONEAPI OR EMBREE_SYCL_SUPPORT)
           ${SYCL_ROOT_DIR}/bin/pi_win_proxy_loaderd.dll)
       else()
         list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE
-          ${SYCL_ROOT_DIR}/bin/sycl6.dll
-          ${SYCL_ROOT_DIR}/bin/pi_level_zero.dll)
+          ${SYCL_ROOT_DIR}/bin/sycl8.dll
+          ${SYCL_ROOT_DIR}/bin/ur_adapter_level_zero.dll
+          ${SYCL_ROOT_DIR}/bin/ur_loader.dll
+          ${SYCL_ROOT_DIR}/bin/ur_win_proxy_loader.dll)
         list(APPEND PLATFORM_BUNDLED_LIBRARIES_DEBUG
-          ${SYCL_ROOT_DIR}/bin/sycl6d.dll
-          ${SYCL_ROOT_DIR}/bin/pi_level_zero.dll)
+          ${SYCL_ROOT_DIR}/bin/sycl8d.dll
+          ${SYCL_ROOT_DIR}/bin/ur_adapter_level_zero.dll
+          ${SYCL_ROOT_DIR}/bin/ur_loader.dll
+          ${SYCL_ROOT_DIR}/bin/ur_win_proxy_loaderd.dll)
       endif()
     else()
-      file(GLOB _sycl_runtime_libraries
-        ${SYCL_ROOT_DIR}/lib/libsycl.so
-        ${SYCL_ROOT_DIR}/lib/libsycl.so.*
-        ${SYCL_ROOT_DIR}/lib/libpi_*.so
-      )
+      if(_cycles_use_legacy_libs)
+        file(GLOB _sycl_runtime_libraries
+          ${SYCL_ROOT_DIR}/lib/libsycl.so
+          ${SYCL_ROOT_DIR}/lib/libsycl.so.*
+          ${SYCL_ROOT_DIR}/lib/libpi_*.so
+        )
+      else()
+        file(GLOB _sycl_runtime_libraries
+          ${SYCL_ROOT_DIR}/lib/libsycl.so
+          ${SYCL_ROOT_DIR}/lib/libsycl.so.*
+          ${SYCL_ROOT_DIR}/lib/libur_*.so
+          ${SYCL_ROOT_DIR}/lib/libur_*.so.*
+        )
+      endif()
       list(FILTER _sycl_runtime_libraries EXCLUDE REGEX ".*\.py")
       list(REMOVE_ITEM _sycl_runtime_libraries "${SYCL_ROOT_DIR}/lib/libpi_opencl.so")
       list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE ${_sycl_runtime_libraries})
@@ -944,6 +923,32 @@ if(WITH_CYCLES_DEVICE_ONEAPI AND WITH_CYCLES_ONEAPI_BINARIES)
     message(STATUS "oneAPI ocloc not found in ${OCLOC_INSTALL_DIR}."
                    " A different ocloc directory can be set using OCLOC_INSTALL_DIR cmake variable.")
     set_and_warn_library_found("ocloc" OCLOC_FOUND WITH_CYCLES_ONEAPI_BINARIES)
+  endif()
+endif()
+
+# Restore default
+set(CMAKE_FIND_FRAMEWORK FIRST)
+
+###########################################################################
+# Metal
+###########################################################################
+
+if(WITH_CYCLES_DEVICE_METAL)
+  find_library(METAL_LIBRARY Metal)
+
+  # This file was added in the 12.0 SDK, use it as a way to detect the version.
+  if(METAL_LIBRARY)
+    if(EXISTS "${METAL_LIBRARY}/Headers/MTLFunctionStitching.h")
+      set(METAL_FOUND ON)
+    else()
+      message(STATUS "Metal version too old, must be SDK 12.0 or newer")
+      set(METAL_FOUND OFF)
+    endif()
+  endif()
+
+  set_and_warn_library_found("Metal" METAL_FOUND WITH_CYCLES_DEVICE_METAL)
+  if(METAL_FOUND)
+    message(STATUS "Found Metal: ${METAL_LIBRARY}")
   endif()
 endif()
 
@@ -971,10 +976,6 @@ elseif(APPLE)
   set(CMAKE_SKIP_INSTALL_RPATH FALSE)
   list(APPEND CMAKE_INSTALL_RPATH "@loader_path/${PLATFORM_LIB_INSTALL_DIR}")
 
-  # For build step, set absolute path to lib folder as it runs before install.
-  set(CMAKE_SKIP_BUILD_RPATH FALSE)
-  list(APPEND CMAKE_BUILD_RPATH ${PLATFORM_BUNDLED_LIBRARY_DIRS})
-
   # Environment variables to run precompiled executables that needed libraries.
   list(JOIN PLATFORM_BUNDLED_LIBRARY_DIRS ":" _library_paths)
   set(PLATFORM_ENV_BUILD "DYLD_LIBRARY_PATH=\"${_library_paths};${DYLD_LIBRARY_PATH}\"")
@@ -985,12 +986,9 @@ elseif(UNIX)
   set(CMAKE_SKIP_INSTALL_RPATH FALSE)
   list(APPEND CMAKE_INSTALL_RPATH $ORIGIN/${PLATFORM_LIB_INSTALL_DIR})
 
-  # For build step, set absolute path to lib folder as it runs before install.
-  set(CMAKE_SKIP_BUILD_RPATH FALSE)
-  list(APPEND CMAKE_BUILD_RPATH $ORIGIN/${PLATFORM_LIB_INSTALL_DIR} ${CMAKE_INSTALL_PREFIX_WITH_CONFIG}/${PLATFORM_LIB_INSTALL_DIR})
-
   # Environment variables to run precompiled executables that needed libraries.
   list(JOIN PLATFORM_BUNDLED_LIBRARY_DIRS ":" _library_paths)
   set(PLATFORM_ENV_BUILD "LD_LIBRARY_PATH=\"${_library_paths}:${LD_LIBRARY_PATH}\"")
   unset(_library_paths)
 endif()
+

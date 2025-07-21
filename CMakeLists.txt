@@ -20,26 +20,43 @@ endif()
 cmake_minimum_required(VERSION 3.10)
 
 # So library linking is more sane.
-cmake_policy(SET CMP0003 NEW)
+if(POLICY CMP0003)
+  cmake_policy(SET CMP0003 NEW)
+endif()
 
 # So syntax problems are errors.
-cmake_policy(SET CMP0010 NEW)
+if(POLICY CMP0010)
+  cmake_policy(SET CMP0010 NEW)
+endif()
 
 # So BUILDINFO and BLENDERPATH strings are automatically quoted.
-cmake_policy(SET CMP0005 NEW)
+if(POLICY CMP0005)
+  cmake_policy(SET CMP0005 NEW)
+endif()
 
 # Input directories must have CMakeLists.txt
-cmake_policy(SET CMP0014 NEW)
+if(POLICY CMP0014)
+  cmake_policy(SET CMP0014 NEW)
+endif()
 
 # Compile definitions.
-cmake_policy(SET CMP0043 NEW)
+if(POLICY CMP0043)
+  cmake_policy(SET CMP0043 NEW)
+endif()
 
 # Use ROOT variables in find_package.
-cmake_policy(SET CMP0074 NEW)
-cmake_policy(SET CMP0144 NEW)
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+endif()
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif() 
 
 # Avoid having empty buildtype.
 set(CMAKE_BUILD_TYPE_INIT "Release")
+
+# Generate compile commands for easy clangd setup.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Generate compile commands for clangd")
 
 ###########################################################################
 # Initialize project.
@@ -60,7 +77,7 @@ include(macros)
 ###########################################################################
 # Global settings.
 
-set(CMAKE_INSTALL_MESSAGE LAZY)
+set(CMAKE_INSTALL_MESSAGE LAZY CACHE STRING "Install message verbosity")
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/install" CACHE PATH "Installation path" FORCE)
@@ -74,7 +91,7 @@ else()
   string(REPLACE "\${BUILD_TYPE}" "" CMAKE_INSTALL_PREFIX_WITH_CONFIG ${CMAKE_INSTALL_PREFIX})
 endif()
 
-# Some stuff is different when building stabdalone Cycles from inside
+# Some stuff is different when building standalone Cycles from inside
 # Blender source code and when building it from it's own repository.
 set(CYCLES_STANDALONE_REPOSITORY TRUE)
 
@@ -103,13 +120,12 @@ option(WITH_CYCLES_OPENCOLORIO      "Build with OpenColorIO support" ON)
 option(WITH_CYCLES_OPENIMAGEDENOISE "Build with OpenImageDenoise support" ON)
 option(WITH_CYCLES_OPENSUBDIV       "Build with OpenSubdiv support" ON)
 option(WITH_CYCLES_OPENVDB          "Build with OpenVDB support" ON)
+option(WITH_CYCLES_PUGIXML          "Build with XML support" ON)
 option(WITH_CYCLES_NANOVDB          "Build with NanoVDB support" ON)
 option(WITH_CYCLES_OSL              "Build with OSL support" ON)
 option(WITH_CYCLES_USD              "Build with USD support" ON)
 
-if(UNIX AND NOT APPLE)
-  option(WITH_CXX11_ABI              "Build with glibc C++11 ABI. Turn off for compatibility with VFX platform 2022 and earlier." ON)
-endif()
+option(WITH_LEGACY_LIBRARIES        "Build with older VFX platform 2024 libraries, for compatibility with Houdini or USD" OFF)
 
 # Development Features
 option(WITH_CYCLES_DEBUG             "Build Cycles with options useful for debugging (e.g., MIS)" OFF)
@@ -125,7 +141,7 @@ if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
 
   option(WITH_CYCLES_CUDA_BINARIES "Build Cycles NVIDIA CUDA binaries" OFF)
   set(CYCLES_CUDA_BINARIES_ARCH
-    sm_30 sm_35 sm_37 sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_86 sm_89 compute_75
+    sm_30 sm_35 sm_37 sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_86 sm_89 sm_120 compute_75
     CACHE STRING "CUDA architectures to build binaries for"
   )
   option(WITH_CYCLES_CUDA_BUILD_SERIAL "\

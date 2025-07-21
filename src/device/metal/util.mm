@@ -12,9 +12,9 @@
 #  include "util/time.h"
 
 #  include <IOKit/IOKitLib.h>
+#  include <ctime>
 #  include <pwd.h>
 #  include <sys/shm.h>
-#  include <time.h>
 
 CCL_NAMESPACE_BEGIN
 
@@ -22,9 +22,9 @@ string MetalInfo::get_device_name(id<MTLDevice> device)
 {
   string device_name = [device.name UTF8String];
   if (get_device_vendor(device) == METAL_GPU_APPLE) {
-    /* Append the GPU core count so we can distinguish between GPU variants in benchmarks. */
-    int gpu_core_count = get_apple_gpu_core_count(device);
-    device_name += string_printf(gpu_core_count ? " (GPU - %d cores)" : " (GPU)", gpu_core_count);
+  /* Append the GPU core count so we can distinguish between GPU variants in benchmarks. */
+  int gpu_core_count = get_apple_gpu_core_count(device);
+  device_name += string_printf(gpu_core_count ? " (GPU - %d cores)" : " (GPU)", gpu_core_count);
   }
   return device_name;
 }
@@ -36,7 +36,7 @@ int MetalInfo::get_apple_gpu_core_count(id<MTLDevice> device)
     io_service_t gpu_service = IOServiceGetMatchingService(
         kIOMainPortDefault, IORegistryEntryIDMatching(device.registryID));
     if (CFNumberRef numberRef = (CFNumberRef)IORegistryEntryCreateCFProperty(
-            gpu_service, CFSTR("gpu-core-count"), 0, 0))
+            gpu_service, CFSTR("gpu-core-count"), nullptr, 0))
     {
       if (CFGetTypeID(numberRef) == CFNumberGetTypeID()) {
         CFNumberGetValue(numberRef, kCFNumberSInt32Type, &core_count);
@@ -72,10 +72,10 @@ AppleGPUArchitecture MetalInfo::get_apple_gpu_architecture(id<MTLDevice> device)
   if (strstr(device_name, "M1")) {
     return APPLE_M1;
   }
-  else if (strstr(device_name, "M2")) {
+  if (strstr(device_name, "M2")) {
     return get_apple_gpu_core_count(device) <= 10 ? APPLE_M2 : APPLE_M2_BIG;
   }
-  else if (strstr(device_name, "M3")) {
+  if (strstr(device_name, "M3")) {
     return APPLE_M3;
   }
   return APPLE_UNKNOWN;
@@ -102,22 +102,20 @@ MetalGPUVendor MetalInfo::get_device_vendor(id<MTLDevice> device)
   return METAL_GPU_UNKNOWN;
 }
 
-int MetalInfo::optimal_sort_partition_elements(id<MTLDevice> device)
+int MetalInfo::optimal_sort_partition_elements()
 {
-  if (auto str = getenv("CYCLES_METAL_SORT_PARTITION_ELEMENTS")) {
+  if (auto *str = getenv("CYCLES_METAL_SORT_PARTITION_ELEMENTS")) {
     return atoi(str);
   }
 
   /* On M1 and M2 GPUs, we see better cache utilization if we partition the active indices before
    * sorting each partition by material. Partitioning into chunks of 65536 elements results in an
    * overall render time speedup of up to 15%. */
-  if (get_device_vendor(device) == METAL_GPU_APPLE) {
-    return 65536;
-  }
-  return 0;
+
+  return 65536;
 }
 
-vector<id<MTLDevice>> const &MetalInfo::get_usable_devices()
+const vector<id<MTLDevice>> &MetalInfo::get_usable_devices()
 {
   static vector<id<MTLDevice>> usable_devices;
   static bool already_enumerated = false;
@@ -125,17 +123,6 @@ vector<id<MTLDevice>> const &MetalInfo::get_usable_devices()
   if (already_enumerated) {
     return usable_devices;
   }
-
-  /* If the system has both an AMD GPU (discrete) and an Intel one (integrated), prefer the AMD
-   * one. This can be overridden with CYCLES_METAL_FORCE_INTEL. */
-  bool has_usable_amd_gpu = false;
-#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
-  if (@available(macos 12.3, *)) {
-    for (id<MTLDevice> device in MTLCopyAllDevices()) {
-      has_usable_amd_gpu |= (get_device_vendor(device) == METAL_GPU_AMD);
-    }
-  }
-#endif
 
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE==1
       NSArray* devices = [NSArray arrayWithObject: MTLCreateSystemDefaultDevice()];
@@ -145,28 +132,23 @@ vector<id<MTLDevice>> const &MetalInfo::get_usable_devices()
   metal_printf("Usable Metal devices:\n");
   for (id<MTLDevice> device in devices) {
     string device_name = get_device_name(device);
-    MetalGPUVendor vendor = get_device_vendor(device);
     bool usable = false;
 
-    if (@available(macos 12.2, *)) {
-      usable |= (vendor == METAL_GPU_APPLE);
-    }
-
     //Apple device should support at least MTLGPUFamilyApple7
-    if(usable && ![device supportsFamily:MTLGPUFamilyApple7])
-        usable = false;
+    if(![device supportsFamily:MTLGPUFamilyApple7])
+        continue;
 
-    if (@available(macos 12.3, *)) {
-      usable |= (vendor == METAL_GPU_AMD);
-    }
-
-#  if defined(MAC_OS_VERSION_13_0)
-    if (!has_usable_amd_gpu) {
-      if (@available(macos 13.0, *)) {
-        usable |= (vendor == METAL_GPU_INTEL);
+    if (@available(macos 12.2, *)) {
+      const char *device_name_char = [device.name UTF8String];
+      if (!(strstr(device_name_char, "Intel") || strstr(device_name_char, "AMD")) &&
+          strstr(device_name_char, "Apple"))
+      {
+        /* TODO: Implement a better way to identify device vendor instead of relying on name. */
+        /* We only support Apple Silicon GPUs which all have unified memory, but explicitly check
+         * just in case it ever changes. */
+        usable = [device hasUnifiedMemory];
       }
     }
-#  endif
 
     if (usable) {
       metal_printf("- %s\n", device_name.c_str());
@@ -188,24 +170,15 @@ vector<id<MTLDevice>> const &MetalInfo::get_usable_devices()
 id<MTLBuffer> MetalBufferPool::get_buffer(id<MTLDevice> device,
                                           id<MTLCommandBuffer> command_buffer,
                                           NSUInteger length,
-                                          MTLResourceOptions options,
                                           const void *pointer,
                                           Stats &stats)
 {
   id<MTLBuffer> buffer = nil;
-
-  MTLStorageMode storageMode = MTLStorageMode((options & MTLResourceStorageModeMask) >>
-                                              MTLResourceStorageModeShift);
-  MTLCPUCacheMode cpuCacheMode = MTLCPUCacheMode((options & MTLResourceCPUCacheModeMask) >>
-                                                 MTLResourceCPUCacheModeShift);
-
   {
     thread_scoped_lock lock(buffer_mutex);
     /* Find an unused buffer with matching size and storage mode. */
     for (MetalBufferListEntry &bufferEntry : temp_buffers) {
-      if (bufferEntry.buffer.length == length && storageMode == bufferEntry.buffer.storageMode &&
-          cpuCacheMode == bufferEntry.buffer.cpuCacheMode && bufferEntry.command_buffer == nil)
-      {
+      if (bufferEntry.buffer.length == length && bufferEntry.command_buffer == nil) {
         buffer = bufferEntry.buffer;
         bufferEntry.command_buffer = command_buffer;
         break;
@@ -214,7 +187,7 @@ id<MTLBuffer> MetalBufferPool::get_buffer(id<MTLDevice> device,
     if (!buffer) {
       /* Create a new buffer and add it to the pool. Typically this pool will only grow to a
        * handful of entries. */
-      buffer = [device newBufferWithLength:length options:options];
+      buffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
       stats.mem_alloc(buffer.allocatedSize);
       total_temp_mem_size += buffer.allocatedSize;
       temp_buffers.push_back(MetalBufferListEntry{buffer, command_buffer});
@@ -224,11 +197,6 @@ id<MTLBuffer> MetalBufferPool::get_buffer(id<MTLDevice> device,
   /* Copy over data */
   if (pointer) {
     memcpy(buffer.contents, pointer, length);
-#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE==0
-    if (buffer.storageMode == MTLStorageModeManaged) {
-      [buffer didModifyRange:NSMakeRange(0, length)];
-    }
-#endif          
   }
 
   return buffer;

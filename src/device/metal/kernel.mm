@@ -4,9 +4,19 @@
 
 #ifdef WITH_METAL
 
-#  include "device/metal/kernel.h"
+#  include <algorithm>
+#  include <atomic>
+#  include <chrono>
+#  include <deque>
+#  include <thread>
+#  include <vector>
+
 #  include "device/metal/device_impl.h"
+#  include "device/metal/kernel.h"
+
 #  include "kernel/device/metal/function_constants.h"
+
+#  include "util/debug.h"
 #  include "util/md5.h"
 #  include "util/path.h"
 #  include "util/tbb.h"
@@ -38,58 +48,56 @@ struct ShaderCache {
     // TODO: Look into tuning for DEVICE_KERNEL_INTEGRATOR_INTERSECT_DEDICATED_LIGHT and
     // DEVICE_KERNEL_INTEGRATOR_SHADE_DEDICATED_LIGHT.
 
-    if (MetalInfo::get_device_vendor(mtlDevice) == METAL_GPU_APPLE) {
-      switch (MetalInfo::get_apple_gpu_architecture(mtlDevice)) {
-        default:
+    switch (MetalInfo::get_apple_gpu_architecture(mtlDevice)) {
+      default:
         case APPLE_A17: //no break
         case APPLE_A18: //no break
         case APPLE_A19: //no break
-        case APPLE_M3:
-          /* Peak occupancy is achieved through Dynamic Caching on M3 GPUs. */
-          for (size_t i = 0; i < DEVICE_KERNEL_NUM; i++) {
-            occupancy_tuning[i] = {64, 64};
-          }
-          break;
-        case APPLE_M2_BIG:
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {384, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {640, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST] = {1024, 64};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW] = {704, 704};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SUBSURFACE] = {640, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY] = {896, 768};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND] = {512, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW] = {32, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {768, 576};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {896, 768};
-          break;
+      case APPLE_M3:
+        /* Peak occupancy is achieved through Dynamic Caching on M3 GPUs. */
+        for (size_t i = 0; i < DEVICE_KERNEL_NUM; i++) {
+          occupancy_tuning[i] = {64, 64};
+        }
+        break;
+      case APPLE_M2_BIG:
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {384, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {640, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST] = {1024, 64};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW] = {704, 704};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SUBSURFACE] = {640, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY] = {896, 768};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND] = {512, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW] = {32, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {768, 576};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {896, 768};
+        break;
         case APPLE_A15: //no break
         case APPLE_A16: //no break
-        case APPLE_M2:
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {32, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {832, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST] = {64, 64};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW] = {64, 64};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SUBSURFACE] = {704, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY] = {1024, 256};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND] = {64, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW] = {256, 256};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {448, 384};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {1024, 1024};
-          break;
+      case APPLE_M2:
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {32, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {832, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST] = {64, 64};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW] = {64, 64};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SUBSURFACE] = {704, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY] = {1024, 256};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND] = {64, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW] = {256, 256};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {448, 384};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {1024, 1024};
+        break;
         case APPLE_A14: //no break
-        case APPLE_M1:
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {256, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {768, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST] = {512, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW] = {384, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SUBSURFACE] = {512, 64};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY] = {512, 256};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND] = {512, 128};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW] = {384, 32};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {576, 384};
-          occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {832, 832};
-          break;
-      }
+      case APPLE_M1:
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES] = {256, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA] = {768, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST] = {512, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW] = {384, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_INTERSECT_SUBSURFACE] = {512, 64};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY] = {512, 256};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND] = {512, 128};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW] = {384, 32};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = {576, 384};
+        occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORTED_PATHS_ARRAY] = {832, 832};
+        break;
     }
 
     occupancy_tuning[DEVICE_KERNEL_INTEGRATOR_SORT_BUCKET_PASS] = {1024, 1024};
@@ -105,7 +113,7 @@ struct ShaderCache {
   void load_kernel(DeviceKernel kernel, MetalDevice *device, MetalPipelineType pso_type);
 
   bool should_load_kernel(DeviceKernel device_kernel,
-                          MetalDevice const *device,
+                          const MetalDevice *device,
                           MetalPipelineType pso_type);
 
   void wait_for_all();
@@ -128,7 +136,7 @@ struct ShaderCache {
 
   static bool running;
   std::condition_variable cond_var;
-  std::deque<MetalKernelPipeline *> request_queue;
+  std::deque<unique_ptr<MetalKernelPipeline>> request_queue;
   std::vector<std::thread> compile_threads;
   std::atomic_int incomplete_requests = 0;
   std::atomic_int incomplete_specialization_requests = 0;
@@ -188,7 +196,7 @@ void ShaderCache::compile_thread_func()
   while (running) {
 
     /* wait for / acquire next request */
-    MetalKernelPipeline *pipeline;
+    unique_ptr<MetalKernelPipeline> pipeline;
     {
       thread_scoped_lock lock(cache_mutex);
       cond_var.wait(lock, [&] { return !running || !request_queue.empty(); });
@@ -196,7 +204,7 @@ void ShaderCache::compile_thread_func()
         continue;
       }
 
-      pipeline = request_queue.front();
+      pipeline = std::move(request_queue.front());
       request_queue.pop_front();
     }
 
@@ -231,7 +239,7 @@ void ShaderCache::compile_thread_func()
           }
         }
       }
-      collection.push_back(unique_ptr<MetalKernelPipeline>(pipeline));
+      collection.push_back(std::move(pipeline));
     }
     incomplete_requests--;
     if (pso_type != PSO_GENERIC) {
@@ -241,7 +249,7 @@ void ShaderCache::compile_thread_func()
 }
 
 bool ShaderCache::should_load_kernel(DeviceKernel device_kernel,
-                                     MetalDevice const *device,
+                                     const MetalDevice *device,
                                      MetalPipelineType pso_type)
 {
   if (!running) {
@@ -322,7 +330,7 @@ void ShaderCache::load_kernel(DeviceKernel device_kernel,
 
       metal_printf("Spawning %d Cycles kernel compilation threads\n", max_mtlcompiler_threads);
       for (int i = 0; i < max_mtlcompiler_threads; i++) {
-        compile_threads.push_back(std::thread([this] { this->compile_thread_func(); }));
+        compile_threads.emplace_back([this] { this->compile_thread_func(); });
       }
     }
   }
@@ -336,13 +344,13 @@ void ShaderCache::load_kernel(DeviceKernel device_kernel,
     incomplete_specialization_requests++;
   }
 
-  MetalKernelPipeline *pipeline = new MetalKernelPipeline;
+  unique_ptr<MetalKernelPipeline> pipeline = make_unique<MetalKernelPipeline>();
 
   /* Keep track of the originating device's ID so that we can cancel requests if the device ceases
    * to be active. */
   pipeline->pipeline_id = g_next_pipeline_id.fetch_add(1);
   pipeline->originating_device_id = device->device_id;
-  memcpy(&pipeline->kernel_data_, &device->launch_params.data, sizeof(pipeline->kernel_data_));
+  pipeline->kernel_data_ = device->launch_params.data;
   pipeline->pso_type = pso_type;
   pipeline->mtlDevice = mtlDevice;
   pipeline->kernels_md5 = device->kernels_md5[pso_type];
@@ -361,7 +369,7 @@ void ShaderCache::load_kernel(DeviceKernel device_kernel,
 
   {
     thread_scoped_lock lock(cache_mutex);
-    request_queue.push_back(pipeline);
+    request_queue.push_back(std::move(pipeline));
   }
   cond_var.notify_one();
 }
@@ -444,7 +452,7 @@ bool MetalKernelPipeline::should_use_binary_archive() const
   return false;
 }
 
-static MTLFunctionConstantValues *GetConstantValues(KernelData const *data = nullptr)
+static MTLFunctionConstantValues *GetConstantValues(const KernelData *data = nullptr)
 {
   MTLFunctionConstantValues *constant_values = [MTLFunctionConstantValues new];
 
@@ -543,7 +551,7 @@ id<MTLFunction> MetalKernelPipeline::make_intersection_function(const char *func
     desc.constantValues = GetConstantValues();
   }
 
-  NSError *error = NULL;
+  NSError *error = nullptr;
   id<MTLFunction> rt_intersection_function = [mtlLibrary newFunctionWithDescriptor:desc
                                                                              error:&error];
 
@@ -565,7 +573,7 @@ void MetalKernelPipeline::compile()
   const std::string function_name = std::string("cycles_metal_") +
                                     device_kernel_as_string(device_kernel);
 
-  NSError *error = NULL;
+  NSError *error = nullptr;
 
   MTLFunctionDescriptor *func_desc = [MTLIntersectionFunctionDescriptor functionDescriptor];
   func_desc.name = [@(function_name.c_str()) copy];
@@ -777,7 +785,7 @@ void MetalKernelPipeline::compile()
       metal_printf(
           "newComputePipelineStateWithDescriptor failed for \"%s\"%s. "
           "Error:\n%s\n",
-          device_kernel_as_string((DeviceKernel)device_kernel),
+          device_kernel_as_string(device_kernel),
           (archive && !recreate_archive) ? " Archive may be incomplete or corrupt - attempting "
                                            "recreation.." :
                                            "",
@@ -805,7 +813,7 @@ void MetalKernelPipeline::compile()
     metal_printf("%16s | %2d | %-55s | %7.2fs | FAILED!\n",
                  kernel_type_as_string(pso_type),
                  device_kernel,
-                 device_kernel_as_string((DeviceKernel)device_kernel),
+                 device_kernel_as_string(device_kernel),
                  duration);
     return;
   }
@@ -845,7 +853,7 @@ void MetalKernelPipeline::compile()
     metal_printf("%16s | %2d | %-55s | %7.2fs | %s: %s\n",
                  kernel_type_as_string(pso_type),
                  device_kernel,
-                 device_kernel_as_string((DeviceKernel)device_kernel),
+                 device_kernel_as_string(device_kernel),
                  duration,
                  creating_new_archive ? " new" : "load",
                  metalbin_name.c_str());
@@ -854,7 +862,7 @@ void MetalKernelPipeline::compile()
 
 bool MetalDeviceKernels::load(MetalDevice *device, MetalPipelineType pso_type)
 {
-  auto shader_cache = get_shader_cache(device->mtlDevice);
+  auto *shader_cache = get_shader_cache(device->mtlDevice);
   for (int i = 0; i < DEVICE_KERNEL_NUM; i++) {
     shader_cache->load_kernel((DeviceKernel)i, device, pso_type);
   }
@@ -879,10 +887,10 @@ int MetalDeviceKernels::num_incomplete_specialization_requests()
   return total;
 }
 
-int MetalDeviceKernels::get_loaded_kernel_count(MetalDevice const *device,
+int MetalDeviceKernels::get_loaded_kernel_count(const MetalDevice *device,
                                                 MetalPipelineType pso_type)
 {
-  auto shader_cache = get_shader_cache(device->mtlDevice);
+  auto *shader_cache = get_shader_cache(device->mtlDevice);
   int loaded_count = DEVICE_KERNEL_NUM;
   for (int i = 0; i < DEVICE_KERNEL_NUM; i++) {
     if (shader_cache->should_load_kernel((DeviceKernel)i, device, pso_type)) {
@@ -892,7 +900,7 @@ int MetalDeviceKernels::get_loaded_kernel_count(MetalDevice const *device,
   return loaded_count;
 }
 
-bool MetalDeviceKernels::should_load_kernels(MetalDevice const *device, MetalPipelineType pso_type)
+bool MetalDeviceKernels::should_load_kernels(const MetalDevice *device, MetalPipelineType pso_type)
 {
   return get_loaded_kernel_count(device, pso_type) != DEVICE_KERNEL_NUM;
 }
@@ -914,6 +922,13 @@ bool MetalDeviceKernels::is_benchmark_warmup()
     }
   }
   return false;
+}
+
+void MetalDeviceKernels::static_deinitialize()
+{
+  for (int i = 0; i < g_shaderCacheCount; i++) {
+    g_shaderCache[i] = DeviceShaderCache();
+  }
 }
 
 CCL_NAMESPACE_END

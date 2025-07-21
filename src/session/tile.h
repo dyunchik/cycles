@@ -4,7 +4,10 @@
 
 #pragma once
 
+#include <functional>
+
 #include "session/buffers.h"
+
 #include "util/image.h"
 #include "util/string.h"
 #include "util/unique_ptr.h"
@@ -30,7 +33,7 @@ class Tile {
   int window_x = 0, window_y = 0;
   int window_width = 0, window_height = 0;
 
-  Tile() {}
+  Tile() = default;
 };
 
 /* --------------------------------------------------------------------
@@ -40,7 +43,7 @@ class Tile {
 class TileManager {
  public:
   /* This callback is invoked by whenever on-dist tiles storage file is closed after writing. */
-  function<void(string_view)> full_buffer_written_cb;
+  std::function<void(string_view)> full_buffer_written_cb;
 
   TileManager();
   ~TileManager();
@@ -55,7 +58,7 @@ class TileManager {
    * Only touches scheduling-related state of the tile manager. */
   /* TODO(sergey): Consider using tile area instead of exact size to help dealing with extreme
    * cases of stretched renders. */
-  void reset_scheduling(const BufferParams &params, int2 tile_size);
+  void reset_scheduling(const BufferParams &params, const int2 tile_size);
 
   /* Update for the known buffer passes and scene parameters.
    * Will store all parameters needed for buffers access outside of the scene graph. */
@@ -63,17 +66,17 @@ class TileManager {
 
   void set_temp_dir(const string &temp_dir);
 
-  inline int get_num_tiles() const
+  int get_num_tiles() const
   {
     return tile_state_.num_tiles;
   }
 
-  inline bool has_multiple_tiles() const
+  bool has_multiple_tiles() const
   {
     return tile_state_.num_tiles > 1;
   }
 
-  inline int get_tile_overscan() const
+  int get_tile_overscan() const
   {
     return overscan_;
   }
@@ -82,7 +85,7 @@ class TileManager {
   bool done();
 
   const Tile &get_current_tile() const;
-  const int2 get_size() const;
+  int2 get_size() const;
 
   /* Write render buffer of a tile to a file on disk.
    *
@@ -96,7 +99,7 @@ class TileManager {
   void finish_write_tiles();
 
   /* Check whether any tile has been written to disk. */
-  inline bool has_written_tiles() const
+  bool has_written_tiles() const
   {
     return write_state_.num_tiles_written != 0;
   }
@@ -123,7 +126,7 @@ class TileManager {
  protected:
   /* Get tile configuration for its index.
    * The tile index must be within [0, state_.tile_state_). */
-  Tile get_tile_for_index(int index) const;
+  Tile get_tile_for_index(const int index) const;
 
   bool open_tile_output();
   bool close_tile_output();

@@ -62,11 +62,11 @@ enum AppleGPUArchitecture {
 
 /* Contains static Metal helper functions. */
 struct MetalInfo {
-  static vector<id<MTLDevice>> const &get_usable_devices();
+  static const vector<id<MTLDevice>> &get_usable_devices();
   static int get_apple_gpu_core_count(id<MTLDevice> device);
   static MetalGPUVendor get_device_vendor(id<MTLDevice> device);
   static AppleGPUArchitecture get_apple_gpu_architecture(id<MTLDevice> device);
-  static int optimal_sort_partition_elements(id<MTLDevice> device);
+  static int optimal_sort_partition_elements();
   static string get_device_name(id<MTLDevice> device);
 };
 
@@ -86,7 +86,6 @@ class MetalBufferPool {
   id<MTLBuffer> get_buffer(id<MTLDevice> device,
                            id<MTLCommandBuffer> command_buffer,
                            NSUInteger length,
-                           MTLResourceOptions options,
                            const void *pointer,
                            Stats &stats);
   void process_command_buffer_completion(id<MTLCommandBuffer> command_buffer);

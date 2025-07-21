@@ -84,10 +84,6 @@ macro(cycles_external_libraries_append libraries)
     if(WITH_USD)
       list(APPEND ${libraries} "opengl32")
     endif()
-  elseif(UNIX)
-    if(WITH_USD)
-      list(APPEND ${libraries} "X11")
-    endif()
   endif()
   if(WITH_CYCLES_LOGGING)
     list(APPEND ${libraries} ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES})
@@ -146,7 +142,6 @@ macro(cycles_external_libraries_append libraries)
     ${OPENEXR_LIBRARIES}
     ${OPENEXR_LIBRARIES} # For circular dependencies between libs.
     ${PUGIXML_LIBRARIES}
-    ${BOOST_LIBRARIES}
     ${PYTHON_LIBRARIES}
     ${ZLIB_LIBRARIES}
     ${CMAKE_DL_LIBS}
@@ -190,16 +185,16 @@ macro(cycles_external_libraries_append libraries)
   endif()
 endmacro()
 
-macro(cycles_install_libraries target)
+macro(cycles_install_libraries target_dir)
   # Install shared libraries.
   install(
     FILES ${PLATFORM_BUNDLED_LIBRARIES_RELEASE}
-    DESTINATION ${PLATFORM_LIB_INSTALL_DIR}
+    DESTINATION "${target_dir}${PLATFORM_LIB_INSTALL_DIR}"
     CONFIGURATIONS Release;RelWithDebInfo;MinSizeRel
   )
   install(
     FILES ${PLATFORM_BUNDLED_LIBRARIES_DEBUG}
-    DESTINATION ${PLATFORM_LIB_INSTALL_DIR}
+    DESTINATION "${target_dir}${PLATFORM_LIB_INSTALL_DIR}"
     CONFIGURATIONS Debug
   )
 endmacro()

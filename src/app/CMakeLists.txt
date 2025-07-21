@@ -102,14 +102,30 @@ if(WITH_CYCLES_STANDALONE)
   target_link_libraries(cycles PRIVATE ${LIB})
 
   if(APPLE)
+    set_target_properties(cycles PROPERTIES BUILD_WITH_INSTALL_RPATH true)
+
     if(WITH_CYCLES_STANDALONE_GUI)
-      set_property(TARGET cycles APPEND_STRING PROPERTY LINK_FLAGS
-        " -framework Cocoa -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework ForceFeedback -framework CoreVideo")
+      # Frameworks used by SDL.
+      string(CONCAT _cycles_sdl_frameworks
+        " -framework AudioToolbox"
+        " -framework AudioUnit"
+        " -framework Cocoa"
+        " -framework CoreAudio"
+        " -framework CoreHaptics"
+        " -framework CoreVideo"
+        " -framework ForceFeedback"
+        " -framework GameController"
+      )
+      set_property(
+        TARGET cycles
+        APPEND PROPERTY LINK_FLAGS
+        "${_cycles_sdl_frameworks}"
+      )
     endif()
   endif()
 
   if(CYCLES_STANDALONE_REPOSITORY)
-    cycles_install_libraries(cycles)
+    cycles_install_libraries("")
 
     if(WITH_USD AND USD_LIBRARY_DIR)
       install(DIRECTORY

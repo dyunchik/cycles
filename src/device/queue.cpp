@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "device/queue.h"
+#include "device/kernel.h"
 
 #include "util/algorithm.h"
 #include "util/log.h"
@@ -15,11 +16,7 @@
 
 CCL_NAMESPACE_BEGIN
 
-DeviceQueue::DeviceQueue(Device *device)
-    : device(device),
-      last_kernels_enqueued_(0),
-      last_sync_time_(0.0),
-      is_per_kernel_performance_(false)
+DeviceQueue::DeviceQueue(Device *device) : device(device)
 {
   DCHECK_NE(device, nullptr);
   is_per_kernel_performance_ = getenv("CYCLES_DEBUG_PER_KERNEL_PERFORMANCE");
@@ -62,7 +59,7 @@ void DeviceQueue::debug_init_execution()
     last_sync_time_ = time_dt();
   }
 
-  last_kernels_enqueued_ = 0;
+  last_kernels_enqueued_.reset();
 }
 
 void DeviceQueue::debug_enqueue_begin(DeviceKernel kernel, const int work_size)
@@ -72,7 +69,7 @@ void DeviceQueue::debug_enqueue_begin(DeviceKernel kernel, const int work_size)
                       << work_size;
   }
 
-  last_kernels_enqueued_ |= (uint64_t(1) << (uint64_t)kernel);
+  last_kernels_enqueued_.set(kernel, true);
 }
 
 void DeviceQueue::debug_enqueue_end()
@@ -91,14 +88,14 @@ void DeviceQueue::debug_synchronize()
 
     /* There is no sense to have an entries in the performance data
      * container without related kernel information. */
-    if (last_kernels_enqueued_ != 0) {
+    if (last_kernels_enqueued_.any()) {
       stats_kernel_time_[last_kernels_enqueued_] += elapsed_time;
     }
 
     last_sync_time_ = new_time;
   }
 
-  last_kernels_enqueued_ = 0;
+  last_kernels_enqueued_.reset();
 }
 
 string DeviceQueue::debug_active_kernels()

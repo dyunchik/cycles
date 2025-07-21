@@ -2,6 +2,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
+#include "device/device.h"
+
 #ifdef WITH_METAL
 
 #  include "device/metal/device.h"
@@ -18,17 +20,22 @@ CCL_NAMESPACE_BEGIN
 
 #ifdef WITH_METAL
 
-Device *device_metal_create(const DeviceInfo &info,
-                            Stats &stats,
-                            Profiler &profiler,
-                            bool headless)
+unique_ptr<Device> device_metal_create(const DeviceInfo &info,
+                                       Stats &stats,
+                                       Profiler &profiler,
+                                       bool headless)
 {
-  return new MetalDevice(info, stats, profiler, headless);
+  return make_unique<MetalDevice>(info, stats, profiler, headless);
 }
 
 bool device_metal_init()
 {
   return true;
+}
+
+void device_metal_exit()
+{
+  MetalDeviceKernels::static_deinitialize();
 }
 
 void device_metal_info(vector<DeviceInfo> &devices)
@@ -88,10 +95,10 @@ void device_metal_info(vector<DeviceInfo> &devices)
 #  if defined(MAC_OS_VERSION_14_0)
     if (vendor != METAL_GPU_INTEL) {
       if (@available(macos 14.0, iOS 14.0, *)) {
-        info.use_hardware_raytracing = device.supportsRaytracing;
+      info.use_hardware_raytracing = device.supportsRaytracing;
 
-        /* Use hardware raytracing for faster rendering on architectures that support it. */
-        info.use_metalrt_by_default = (MetalInfo::get_apple_gpu_architecture(device) >= APPLE_M3);
+      /* Use hardware raytracing for faster rendering on architectures that support it. */
+        info.use_metalrt_by_default = device.supportsRaytracing && (MetalInfo::get_apple_gpu_architecture(device) >= APPLE_M3);
       }
     }
 #  endif
@@ -101,9 +108,10 @@ void device_metal_info(vector<DeviceInfo> &devices)
 
     VLOG_INFO << "Added device \"" << info.description << "\" with id \"" << info.id << "\".";
 
-    if (info.denoisers & DENOISER_OPENIMAGEDENOISE)
+    if (info.denoisers & DENOISER_OPENIMAGEDENOISE) {
       VLOG_INFO << "Device with id \"" << info.id << "\" supports "
                 << denoiserTypeToHumanReadable(DENOISER_OPENIMAGEDENOISE) << ".";
+    }
   }
 }
 
@@ -131,7 +139,9 @@ string device_metal_capabilities()
 
 #else
 
-Device *device_metal_create(const DeviceInfo &info, Stats &stats, Profiler &profiler)
+unique_ptr<Device> device_metal_create(const DeviceInfo & /*info*/,
+                                       Stats & /*stats*/,
+                                       Profiler & /*profiler*/)
 {
   return nullptr;
 }
@@ -141,7 +151,7 @@ bool device_metal_init()
   return false;
 }
 
-void device_metal_info(vector<DeviceInfo> &devices) {}
+void device_metal_info(vector<DeviceInfo> & /*devices*/) {}
 
 string device_metal_capabilities()
 {
